@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { AudioEngine } from "../audio/audioEngine";
 import { FACTORY_PRESETS } from "../audio/presetLibrary";
 import { AmpParams, AmpPreset, PresetCategory } from "../types";
@@ -8,6 +8,10 @@ import {
   MicOff,
   Sliders,
   Play,
+  Square,
+  Volume2,
+  VolumeX,
+  Headphones,
   Save,
   Download,
   Upload,
@@ -40,6 +44,16 @@ export const AmpRigStudio: React.FC = () => {
   const [inputBuffer, setInputBuffer] = useState<number>(256);
   const [customPresetName, setCustomPresetName] = useState("");
   const [showSaveModal, setShowSaveModal] = useState(false);
+
+  // Audio sample hover preview state
+  const [hoverAuditionEnabled, setHoverAuditionEnabled] = useState(true);
+  const [auditioningPresetId, setAuditioningPresetId] = useState<string | null>(null);
+  const hoverTimerRef = useRef<number | null>(null);
+  const activeParamsRef = useRef<AmpParams>(params);
+
+  useEffect(() => {
+    activeParamsRef.current = params;
+  }, [params]);
 
   // Metering state
   const [levels, setLevels] = useState({ in: 0, out: 0, gate: true });
@@ -107,13 +121,66 @@ export const AmpRigStudio: React.FC = () => {
   const handleParamChange = <K extends keyof AmpParams>(key: K, value: AmpParams[K]) => {
     const updated = { ...params, [key]: value };
     setParams(updated);
+    activeParamsRef.current = updated;
     audioEngine.applyAmpParams(updated);
   };
 
   const handleSelectPreset = (preset: AmpPreset) => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    audioEngine.stopPresetAudition();
+    setAuditioningPresetId(null);
     setCurrentPresetId(preset.id);
     setParams(preset.params);
+    activeParamsRef.current = preset.params;
     audioEngine.applyAmpParams(preset.params);
+  };
+
+  const handlePresetMouseEnter = (preset: AmpPreset) => {
+    if (!hoverAuditionEnabled) return;
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+
+    // 140ms debounce to avoid spamming audio while quickly moving mouse
+    hoverTimerRef.current = window.setTimeout(() => {
+      setAuditioningPresetId(preset.id);
+      audioEngine.playPresetAudition(preset, () => {
+        setAuditioningPresetId((prev) => (prev === preset.id ? null : prev));
+        audioEngine.applyAmpParams(activeParamsRef.current);
+      });
+    }, 140);
+  };
+
+  const handlePresetMouseLeave = (preset: AmpPreset) => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    if (auditioningPresetId === preset.id) {
+      audioEngine.stopPresetAudition();
+      setAuditioningPresetId(null);
+      audioEngine.applyAmpParams(activeParamsRef.current);
+    }
+  };
+
+  const handleToggleAudition = (e: React.MouseEvent, preset: AmpPreset) => {
+    e.stopPropagation();
+    if (auditioningPresetId === preset.id) {
+      audioEngine.stopPresetAudition();
+      setAuditioningPresetId(null);
+      audioEngine.applyAmpParams(activeParamsRef.current);
+    } else {
+      if (hoverTimerRef.current) {
+        clearTimeout(hoverTimerRef.current);
+        hoverTimerRef.current = null;
+      }
+      setAuditioningPresetId(preset.id);
+      audioEngine.playPresetAudition(preset, () => {
+        setAuditioningPresetId((prev) => (prev === preset.id ? null : prev));
+        audioEngine.applyAmpParams(activeParamsRef.current);
+      });
+    }
   };
 
   const handleToggleLiveInput = async () => {
@@ -338,7 +405,30 @@ export const AmpRigStudio: React.FC = () => {
             </h3>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center flex-wrap gap-2">
+            {/* Hover Audition Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                if (hoverAuditionEnabled) {
+                  audioEngine.stopPresetAudition();
+                  setAuditioningPresetId(null);
+                }
+                setHoverAuditionEnabled(!hoverAuditionEnabled);
+              }}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all border cursor-pointer ${
+                hoverAuditionEnabled
+                  ? "bg-[#CCFF00]/15 text-[#CCFF00] border-[#CCFF00]/60 shadow-[0_0_12px_rgba(204,255,0,0.2)]"
+                  : "bg-[#1D1D21] text-gray-400 border-[#333338] hover:text-gray-200"
+              }`}
+              title="Toggle automatic high-fidelity sample audio playback when hovering over presets"
+            >
+              <Headphones className="w-3.5 h-3.5" />
+              <span>
+                Audition on Hover: <strong className={hoverAuditionEnabled ? "text-[#CCFF00]" : "text-gray-500"}>{hoverAuditionEnabled ? "ON" : "OFF"}</strong>
+              </span>
+            </button>
+
             <button
               onClick={() => setShowSaveModal(true)}
               className="px-3 py-1.5 rounded-lg bg-[#1D1D21] hover:bg-[#25252b] text-gray-200 text-xs font-mono font-bold flex items-center gap-1.5 transition-all border border-[#333338] cursor-pointer"
@@ -422,24 +512,30 @@ export const AmpRigStudio: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
             {filteredPresets.map((preset) => {
               const isSelected = currentPresetId === preset.id;
+              const isAuditioning = auditioningPresetId === preset.id;
               const cat = preset.category || (preset.id.startsWith("custom-") ? "Custom" : "High-Gain");
               return (
-                <button
+                <div
                   key={preset.id}
-                  id={`preset-btn-${preset.id}`}
+                  id={`preset-card-${preset.id}`}
+                  onMouseEnter={() => handlePresetMouseEnter(preset)}
+                  onMouseLeave={() => handlePresetMouseLeave(preset)}
                   onClick={() => handleSelectPreset(preset)}
-                  className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer group ${
-                    isSelected
+                  className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer group select-none ${
+                    isAuditioning
+                      ? "bg-[#1F1F24] border-[#CCFF00] shadow-[0_0_20px_rgba(204,255,0,0.35)] ring-2 ring-[#CCFF00]"
+                      : isSelected
                       ? "bg-[#1D1D21] border-[#CCFF00] shadow-[0_0_15px_rgba(204,255,0,0.25)] ring-1 ring-[#CCFF00]"
-                      : "bg-[#0A0A0B] border-[#222226] hover:border-[#333338] hover:bg-[#141416]"
+                      : "bg-[#0A0A0B] border-[#222226] hover:border-[#44444c] hover:bg-[#141416]"
                   }`}
                 >
                   <div>
+                    {/* Top Row: Category Tag, Genre, Audition Equalizer / Button */}
                     <div className="flex items-center justify-between gap-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span
                           className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold ${
-                            isSelected
+                            isAuditioning || isSelected
                               ? "bg-[#CCFF00] text-black"
                               : cat === "Clean"
                               ? "bg-sky-950/80 text-sky-400 border border-sky-800/40"
@@ -450,27 +546,64 @@ export const AmpRigStudio: React.FC = () => {
                         >
                           {cat}
                         </span>
-                        <span className="text-[9px] font-mono text-gray-500 truncate max-w-[90px]">
+                        <span className="text-[9px] font-mono text-gray-500 truncate max-w-[85px]">
                           {preset.subgenre}
                         </span>
                       </div>
-                      {isSelected && (
-                        <span className="w-2 h-2 rounded-full bg-[#CCFF00] shadow-[0_0_6px_rgba(204,255,0,0.9)] animate-pulse shrink-0" />
-                      )}
+
+                      {/* Audition Button & Visual Equalizer Indicator */}
+                      <div className="flex items-center gap-1.5">
+                        {isAuditioning && (
+                          <div className="flex items-end gap-0.5 h-3.5 py-0.5">
+                            <span className="w-0.5 bg-[#CCFF00] rounded-full h-full animate-bounce" />
+                            <span className="w-0.5 bg-[#CCFF00] rounded-full h-2/3 animate-bounce [animation-delay:0.15s]" />
+                            <span className="w-0.5 bg-[#CCFF00] rounded-full h-full animate-bounce [animation-delay:0.3s]" />
+                            <span className="w-0.5 bg-[#CCFF00] rounded-full h-1/2 animate-bounce [animation-delay:0.45s]" />
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleAudition(e, preset)}
+                          className={`p-1 rounded-lg border transition-all cursor-pointer ${
+                            isAuditioning
+                              ? "bg-[#CCFF00] text-black border-[#CCFF00] shadow-[0_0_8px_rgba(204,255,0,0.5)]"
+                              : "bg-[#141416] text-gray-400 border-[#2b2b30] hover:text-[#CCFF00] hover:border-[#CCFF00]/60"
+                          }`}
+                          title={isAuditioning ? "Stop audio preview" : "Audition audio sample riff"}
+                        >
+                          {isAuditioning ? (
+                            <Square className="w-3 h-3 fill-current" />
+                          ) : (
+                            <Volume2 className="w-3 h-3" />
+                          )}
+                        </button>
+
+                        {isSelected && !isAuditioning && (
+                          <span className="w-2 h-2 rounded-full bg-[#CCFF00] shadow-[0_0_6px_rgba(204,255,0,0.9)] animate-pulse shrink-0" />
+                        )}
+                      </div>
                     </div>
-                    <h4 className="font-bold text-xs sm:text-sm font-mono text-gray-100 mt-2 line-clamp-1 group-hover:text-white">
-                      {preset.name}
+
+                    <h4 className="font-bold text-xs sm:text-sm font-mono text-gray-100 mt-2 line-clamp-1 group-hover:text-white flex items-center justify-between">
+                      <span>{preset.name}</span>
                     </h4>
                     <p className="text-[11px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">
                       {preset.description}
                     </p>
                   </div>
 
-                  <div className="mt-2.5 pt-2 border-t border-[#222226] flex items-center justify-between text-[10px] font-mono text-gray-500">
-                    <span className="truncate">{preset.params.ampModel}</span>
-                    <span className="text-[#CCFF00] font-bold">Gain: {preset.params.gain.toFixed(1)}</span>
+                  <div className="mt-2.5 pt-2 border-t border-[#222226] flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-gray-500 truncate">{preset.params.ampModel}</span>
+                    {isAuditioning ? (
+                      <span className="text-[#CCFF00] font-bold uppercase tracking-wider animate-pulse flex items-center gap-1">
+                        <Radio className="w-2.5 h-2.5" /> Auditioning
+                      </span>
+                    ) : (
+                      <span className="text-[#CCFF00] font-bold">Gain: {preset.params.gain.toFixed(1)}</span>
+                    )}
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

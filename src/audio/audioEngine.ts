@@ -96,6 +96,10 @@ export class AudioEngine {
 
   private currentParams: AmpParams | null = null;
 
+  // Preset Sample Preview State
+  public activePreviewPresetId: string | null = null;
+  private previewTimers: number[] = [];
+
   private constructor() {}
 
   public static getInstance(): AudioEngine {
@@ -821,6 +825,152 @@ export class AudioEngine {
         }, stringIdx * 6);
       }
     });
+  }
+
+  // Stop active preset sample audition
+  public stopPresetAudition(): void {
+    if (this.previewTimers.length > 0) {
+      this.previewTimers.forEach((t) => window.clearTimeout(t));
+      this.previewTimers = [];
+    }
+    this.activePreviewPresetId = null;
+  }
+
+  // Play short, high-fidelity sample audio riff for an amp/effect preset audition
+  public async playPresetAudition(
+    preset: { id: string; name: string; category?: string; subgenre?: string; params: AmpParams },
+    onEnd?: () => void
+  ): Promise<void> {
+    await this.init();
+    if (!this.ctx) return;
+
+    this.stopPresetAudition();
+    this.activePreviewPresetId = preset.id;
+    this.applyAmpParams(preset.params);
+
+    const schedule = (fn: () => void, delayMs: number) => {
+      const timer = window.setTimeout(() => {
+        if (this.activePreviewPresetId === preset.id) {
+          fn();
+        }
+      }, delayMs);
+      this.previewTimers.push(timer);
+    };
+
+    const id = preset.id;
+    const cat = preset.category || "High-Gain";
+
+    // 1. CLEAN / AMBIENT SHIMMER (Arpeggiated ethereal progression)
+    if (id === "preset-clean-ambient-shimmer" || (cat === "Clean" && id.includes("ambient"))) {
+      schedule(() => this.playDropCNote(0, 0, 1.8, false), 0);
+      schedule(() => this.playDropCNote(1, 7, 1.6, false), 140);
+      schedule(() => this.playDropCNote(2, 9, 1.5, false), 280);
+      schedule(() => this.playDropCNote(3, 10, 1.5, false), 420);
+      schedule(() => this.playDropCNote(4, 12, 1.6, false), 560);
+      schedule(() => this.playDropCNote(5, 12, 1.8, false), 700);
+      schedule(() => this.playDropCVoicing(["x", 7, 9, 10, 12, 12], false, 1.6), 1100);
+      schedule(() => {
+        this.activePreviewPresetId = null;
+        onEnd?.();
+      }, 2400);
+    }
+    // 2. MATH-ROCK GLASSY CLEAN (Polyphia / articulate percussive tap & hybrid pick)
+    else if (id === "preset-clean-polyphia-twang" || cat === "Clean") {
+      schedule(() => this.playDropCNote(0, 3, 0.28, false), 0);
+      schedule(() => this.playDropCNote(2, 5, 0.25, false), 110);
+      schedule(() => this.playDropCNote(3, 7, 0.25, false), 220);
+      schedule(() => this.playDropCNote(4, 8, 0.3, false), 330);
+      schedule(() => this.playDropCNote(3, 5, 0.22, false), 440);
+      schedule(() => this.playDropCNote(4, 10, 0.35, false), 550);
+      schedule(() => this.playDropCVoicing([3, 5, 5, 7, 8, "x"], false, 1.3), 750);
+      schedule(() => {
+        this.activePreviewPresetId = null;
+        onEnd?.();
+      }, 1900);
+    }
+    // 3. SWEDISH DEATH HM-2 BUZZSAW (Grinding Stockholm tremolo & chainsaw chug)
+    else if (id === "preset-hm2-chainsaw") {
+      const tremolo = [0, 80, 160, 240, 320, 400, 480, 560];
+      tremolo.forEach((t, i) => {
+        const fret = i % 2 === 0 ? 0 : 1;
+        schedule(() => this.playDropCVoicing([fret, fret, fret, "x", "x", "x"], true, 0.12), t);
+      });
+      schedule(() => this.playDropCVoicing([3, 3, 3, "x", "x", "x"], true, 0.2), 700);
+      schedule(() => this.playDropCVoicing([2, 2, 2, "x", "x", "x"], true, 0.2), 860);
+      schedule(() => this.playDropCVoicing([0, 0, 0, "x", "x", "x"], false, 1.1), 1050);
+      schedule(() => {
+        this.activePreviewPresetId = null;
+        onEnd?.();
+      }, 2000);
+    }
+    // 4. 80s BAY AREA THRASH (Fast galloping downpicking & sharp treble)
+    else if (id === "preset-80s-thrash") {
+      const times = [0, 90, 180, 300, 390, 480, 600, 690, 780];
+      times.forEach((t, i) => {
+        const fret = i === 2 ? 3 : i === 5 ? 5 : i === 8 ? 6 : 0;
+        schedule(() => this.playDropCVoicing([fret, fret, fret, "x", "x", "x"], fret === 0, 0.14), t);
+      });
+      schedule(() => this.playDropCVoicing([5, 5, 5, "x", "x", "x"], true, 0.18), 920);
+      schedule(() => this.playDropCVoicing([3, 3, 3, "x", "x", "x"], true, 0.18), 1080);
+      schedule(() => this.playDropCVoicing([0, 0, 0, "x", "x", "x"], false, 1.0), 1250);
+      schedule(() => {
+        this.activePreviewPresetId = null;
+        onEnd?.();
+      }, 2100);
+    }
+    // 5. DJENT 808 LASER PRECISION (Tight gate syncopation, clank mid-punch)
+    else if (id === "preset-djent-808") {
+      const djentSteps = [0, 110, 220, 380, 490, 650, 760, 870, 1020];
+      djentSteps.forEach((t, i) => {
+        const fret = i === 3 ? 1 : i === 6 ? 1 : i === 8 ? 4 : 0;
+        schedule(() => this.playDropCVoicing([fret, fret, fret, "x", "x", "x"], true, 0.09), t);
+      });
+      schedule(() => this.playDropCVoicing([0, 0, 0, "x", "x", "x"], false, 0.9), 1180);
+      schedule(() => {
+        this.activePreviewPresetId = null;
+        onEnd?.();
+      }, 1950);
+    }
+    // 6. PROG METAL LIQUID LEAD (Silky sustain, singing notes, delay spill)
+    else if (id === "preset-prog-liquid-lead") {
+      schedule(() => this.playDropCNote(3, 7, 0.35, false), 0);
+      schedule(() => this.playDropCNote(3, 9, 0.35, false), 180);
+      schedule(() => this.playDropCNote(3, 10, 0.4, false), 360);
+      schedule(() => this.playDropCNote(4, 10, 0.45, false), 580);
+      schedule(() => this.playDropCNote(4, 12, 0.5, false), 820);
+      schedule(() => this.playDropCNote(5, 14, 1.5, false), 1100);
+      schedule(() => {
+        this.activePreviewPresetId = null;
+        onEnd?.();
+      }, 2300);
+    }
+    // 7. SLUDGE / DOOM / POST-METAL DRONE (Crushing low-end fuzz, cavernous sustain)
+    else if (id === "preset-doom-sludge" || id === "preset-post-metal-drone" || cat === "Experimental") {
+      schedule(() => this.playDropCVoicing([0, 0, 0, "x", "x", "x"], false, 2.2), 0);
+      schedule(() => this.playDropCNote(0, 0, 2.0, false), 20);
+      schedule(() => this.playDropCVoicing([1, 1, 1, "x", "x", "x"], false, 1.6), 1100);
+      schedule(() => this.playDropCVoicing([0, 0, 0, "x", "x", "x"], false, 1.8), 1700);
+      schedule(() => {
+        this.activePreviewPresetId = null;
+        onEnd?.();
+      }, 2600);
+    }
+    // 8. DEFAULT / 5150 / MESA NU-METAL / HIGH-GAIN CHUG
+    else {
+      // 0-0-0 Modern Metalcore Breakdown Riff
+      schedule(() => this.playDropCVoicing([0, 0, 0, "x", "x", "x"], true, 0.16), 0);
+      schedule(() => this.playDropCVoicing([0, 0, 0, "x", "x", "x"], true, 0.16), 140);
+      schedule(() => this.playDropCVoicing([0, 0, 0, "x", "x", "x"], true, 0.16), 280);
+      schedule(() => this.playDropCVoicing([3, 3, 3, "x", "x", "x"], false, 0.28), 440);
+      schedule(() => this.playDropCVoicing([5, 5, 5, "x", "x", "x"], false, 0.28), 660);
+      schedule(() => this.playDropCVoicing([0, 0, 0, "x", "x", "x"], true, 0.16), 900);
+      schedule(() => this.playDropCVoicing([0, 0, 0, "x", "x", "x"], true, 0.16), 1040);
+      schedule(() => this.playDropCVoicing([0, 0, 0, "x", "x", "x"], false, 1.2), 1200);
+      schedule(() => {
+        this.activePreviewPresetId = null;
+        onEnd?.();
+      }, 2100);
+    }
   }
 
   // Metal Drum Machine Generator
