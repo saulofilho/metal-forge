@@ -114,10 +114,13 @@ export interface AmpParams {
   reverbMix: number; // 0 to 10
 }
 
+export type PresetCategory = "All" | "High-Gain" | "Clean" | "Experimental" | "Custom";
+
 export interface AmpPreset {
   id: string;
   name: string;
   subgenre: MetalSubgenre;
+  category?: "High-Gain" | "Clean" | "Experimental" | "Custom";
   description: string;
   iconName: string;
   params: AmpParams;

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { AudioEngine } from "../audio/audioEngine";
 import { FACTORY_PRESETS } from "../audio/presetLibrary";
-import { AmpParams, AmpPreset } from "../types";
+import { AmpParams, AmpPreset, PresetCategory } from "../types";
 import { Knob } from "./Knob";
 import {
   Mic,
@@ -14,6 +14,10 @@ import {
   Zap,
   Layers,
   Radio,
+  Sparkles,
+  Flame,
+  Search,
+  Filter,
 } from "lucide-react";
 
 export const AmpRigStudio: React.FC = () => {
@@ -28,6 +32,9 @@ export const AmpRigStudio: React.FC = () => {
   });
 
   const [currentPresetId, setCurrentPresetId] = useState<string>("preset-5150-chug");
+  const [selectedCategory, setSelectedCategory] = useState<PresetCategory>("All");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [customPresetCategory, setCustomPresetCategory] = useState<"High-Gain" | "Clean" | "Experimental" | "Custom">("High-Gain");
   const [params, setParams] = useState<AmpParams>(FACTORY_PRESETS[0].params);
   const [isLiveInputActive, setIsLiveInputActive] = useState(false);
   const [inputBuffer, setInputBuffer] = useState<number>(256);
@@ -36,6 +43,49 @@ export const AmpRigStudio: React.FC = () => {
 
   // Metering state
   const [levels, setLevels] = useState({ in: 0, out: 0, gate: true });
+
+  // Filtered preset list based on category & search query
+  const filteredPresets = useMemo(() => {
+    return presets.filter((preset) => {
+      // Determine category (fallback if missing)
+      const cat = preset.category || (preset.id.startsWith("custom-") ? "Custom" : "High-Gain");
+      
+      const matchesCategory =
+        selectedCategory === "All" ||
+        (selectedCategory === "Custom" && (preset.id.startsWith("custom-") || cat === "Custom")) ||
+        cat === selectedCategory;
+
+      const matchesSearch =
+        !searchQuery.trim() ||
+        preset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        preset.subgenre.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        preset.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        preset.params.ampModel.toLowerCase().includes(searchQuery.toLowerCase());
+
+      return matchesCategory && matchesSearch;
+    });
+  }, [presets, selectedCategory, searchQuery]);
+
+  // Counts per category
+  const categoryCounts = useMemo(() => {
+    const counts = {
+      All: presets.length,
+      "High-Gain": 0,
+      Clean: 0,
+      Experimental: 0,
+      Custom: 0,
+    };
+    presets.forEach((p) => {
+      const cat = p.category || (p.id.startsWith("custom-") ? "Custom" : "High-Gain");
+      if (p.id.startsWith("custom-")) {
+        counts.Custom++;
+      }
+      if (cat === "High-Gain") counts["High-Gain"]++;
+      else if (cat === "Clean") counts.Clean++;
+      else if (cat === "Experimental") counts.Experimental++;
+    });
+    return counts;
+  }, [presets]);
 
   useEffect(() => {
     audioEngine.init().then(() => {
@@ -120,6 +170,7 @@ export const AmpRigStudio: React.FC = () => {
       id: `custom-${Date.now()}`,
       name: customPresetName,
       subgenre: "Metalcore",
+      category: customPresetCategory,
       description: "Custom user dialed rig preset.",
       iconName: "Flame",
       params: { ...params },
@@ -276,8 +327,9 @@ export const AmpRigStudio: React.FC = () => {
         </div>
       </div>
 
-      {/* Preset Selector Bento Grid */}
-      <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 sm:p-5 shadow-2xl">
+      {/* Preset Selector Bento Grid with Categorical Filtering */}
+      <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
+        {/* Preset Header & Actions */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#222226]">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-[#CCFF00]" />
@@ -310,43 +362,133 @@ export const AmpRigStudio: React.FC = () => {
           </div>
         </div>
 
-        {/* Preset Cards Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 mt-3">
-          {presets.map((preset) => {
-            const isSelected = currentPresetId === preset.id;
-            return (
+        {/* Categorical Filtering Tabs & Search Toolbar */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          {/* Category Filter Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            {(["All", "High-Gain", "Clean", "Experimental", "Custom"] as PresetCategory[]).map((cat) => {
+              const isActive = selectedCategory === cat;
+              const count = categoryCounts[cat] || 0;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap border ${
+                    isActive
+                      ? "bg-[#CCFF00] text-black border-[#CCFF00] shadow-[0_0_12px_rgba(204,255,0,0.35)]"
+                      : "bg-[#0A0A0B] text-gray-400 border-[#222226] hover:text-white hover:border-[#333338]"
+                  }`}
+                >
+                  {cat === "High-Gain" && <Flame className="w-3 h-3" />}
+                  {cat === "Clean" && <Sparkles className="w-3 h-3" />}
+                  {cat === "Experimental" && <Zap className="w-3 h-3" />}
+                  {cat === "Custom" && <Layers className="w-3 h-3" />}
+                  {cat}
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                      isActive ? "bg-black/20 text-black font-black" : "bg-[#141416] text-gray-500"
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search Filter Input */}
+          <div className="relative min-w-[200px] md:w-64">
+            <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search tone, genre, amp..."
+              className="w-full bg-[#0A0A0B] border border-[#222226] rounded-xl pl-8 pr-3 py-1.5 text-xs text-gray-200 font-mono focus:border-[#CCFF00] outline-none placeholder:text-gray-600 transition-colors"
+            />
+            {searchQuery && (
               <button
-                key={preset.id}
-                id={`preset-btn-${preset.id}`}
-                onClick={() => handleSelectPreset(preset)}
-                className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer ${
-                  isSelected
-                    ? "bg-[#1D1D21] border-[#CCFF00] shadow-[0_0_15px_rgba(204,255,0,0.25)] ring-1 ring-[#CCFF00]"
-                    : "bg-[#0A0A0B] border-[#222226] hover:border-[#333338]"
-                }`}
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs font-mono"
               >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold ${
-                        isSelected ? "bg-[#CCFF00] text-black" : "bg-[#141416] text-gray-400 border border-[#333338]"
-                      }`}
-                    >
-                      {preset.subgenre}
-                    </span>
-                    {isSelected && (
-                      <span className="w-2 h-2 rounded-full bg-[#CCFF00] shadow-[0_0_6px_rgba(204,255,0,0.9)] animate-pulse" />
-                    )}
-                  </div>
-                  <h4 className="font-bold text-xs sm:text-sm font-mono text-gray-100 mt-1.5 line-clamp-1">
-                    {preset.name}
-                  </h4>
-                  <p className="text-[11px] text-gray-400 mt-1 line-clamp-2">{preset.description}</p>
-                </div>
+                ✕
               </button>
-            );
-          })}
+            )}
+          </div>
         </div>
+
+        {/* Preset Cards Grid (Filtered) */}
+        {filteredPresets.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+            {filteredPresets.map((preset) => {
+              const isSelected = currentPresetId === preset.id;
+              const cat = preset.category || (preset.id.startsWith("custom-") ? "Custom" : "High-Gain");
+              return (
+                <button
+                  key={preset.id}
+                  id={`preset-btn-${preset.id}`}
+                  onClick={() => handleSelectPreset(preset)}
+                  className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer group ${
+                    isSelected
+                      ? "bg-[#1D1D21] border-[#CCFF00] shadow-[0_0_15px_rgba(204,255,0,0.25)] ring-1 ring-[#CCFF00]"
+                      : "bg-[#0A0A0B] border-[#222226] hover:border-[#333338] hover:bg-[#141416]"
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold ${
+                            isSelected
+                              ? "bg-[#CCFF00] text-black"
+                              : cat === "Clean"
+                              ? "bg-sky-950/80 text-sky-400 border border-sky-800/40"
+                              : cat === "Experimental"
+                              ? "bg-purple-950/80 text-purple-400 border border-purple-800/40"
+                              : "bg-[#141416] text-gray-400 border border-[#333338]"
+                          }`}
+                        >
+                          {cat}
+                        </span>
+                        <span className="text-[9px] font-mono text-gray-500 truncate max-w-[90px]">
+                          {preset.subgenre}
+                        </span>
+                      </div>
+                      {isSelected && (
+                        <span className="w-2 h-2 rounded-full bg-[#CCFF00] shadow-[0_0_6px_rgba(204,255,0,0.9)] animate-pulse shrink-0" />
+                      )}
+                    </div>
+                    <h4 className="font-bold text-xs sm:text-sm font-mono text-gray-100 mt-2 line-clamp-1 group-hover:text-white">
+                      {preset.name}
+                    </h4>
+                    <p className="text-[11px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">
+                      {preset.description}
+                    </p>
+                  </div>
+
+                  <div className="mt-2.5 pt-2 border-t border-[#222226] flex items-center justify-between text-[10px] font-mono text-gray-500">
+                    <span className="truncate">{preset.params.ampModel}</span>
+                    <span className="text-[#CCFF00] font-bold">Gain: {preset.params.gain.toFixed(1)}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="py-8 text-center bg-[#0A0A0B] rounded-xl border border-[#222226] font-mono">
+            <Filter className="w-6 h-6 text-gray-600 mx-auto mb-2" />
+            <p className="text-xs text-gray-400">No presets matched "{searchQuery}" in category "{selectedCategory}".</p>
+            <button
+              onClick={() => {
+                setSelectedCategory("All");
+                setSearchQuery("");
+              }}
+              className="mt-2 text-xs text-[#CCFF00] hover:underline cursor-pointer"
+            >
+              Reset Filters
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Amp Head Chassis */}
@@ -848,6 +990,25 @@ export const AmpRigStudio: React.FC = () => {
               placeholder="e.g. My Heavy 0-0-0 Destroyer"
               className="w-full bg-[#0A0A0B] border border-[#222226] rounded-xl px-3 py-2 text-sm text-gray-100 font-mono focus:border-[#CCFF00] outline-none"
             />
+            <div>
+              <label className="text-[11px] font-mono text-gray-400 block mb-1.5 uppercase font-bold">Preset Category</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(["High-Gain", "Clean", "Experimental"] as const).map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setCustomPresetCategory(cat)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-mono font-bold transition-all border cursor-pointer ${
+                      customPresetCategory === cat
+                        ? "bg-[#CCFF00] text-black border-[#CCFF00]"
+                        : "bg-[#0A0A0B] text-gray-400 border-[#222226] hover:border-[#333338]"
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={() => setShowSaveModal(false)}
