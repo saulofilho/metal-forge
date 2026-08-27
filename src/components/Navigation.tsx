@@ -10,9 +10,10 @@ import {
   Mic,
   MicOff,
   Zap,
+  BookOpen,
 } from "lucide-react";
 
-export type StudioTab = "transposer" | "amp-rig" | "live-hud" | "tuner" | "daw";
+export type StudioTab = "transposer" | "amp-rig" | "live-hud" | "tuner" | "daw" | "metal-history";
 
 interface NavigationProps {
   currentTab: StudioTab;
@@ -65,6 +66,12 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "MULTITRACK DAW",
       icon: Layers,
       badge: "4-Track & Editor",
+    },
+    {
+      id: "metal-history" as StudioTab,
+      label: "METAL ENCYCLOPEDIA",
+      icon: BookOpen,
+      badge: "Eras & Subgenres",
     },
   ];
 

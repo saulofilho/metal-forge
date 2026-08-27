@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { AudioEngine } from "./audio/audioEngine";
+import { FACTORY_PRESETS } from "./audio/presetLibrary";
 import { MidiEngine } from "./audio/midiEngine";
 import { Navigation, StudioTab } from "./components/Navigation";
 import { TransposerStudio } from "./components/TransposerStudio";
@@ -7,6 +8,7 @@ import { AmpRigStudio } from "./components/AmpRigStudio";
 import { LivePerformanceHUD } from "./components/LivePerformanceHUD";
 import { DropCTuner } from "./components/DropCTuner";
 import { MultitrackDAW } from "./components/MultitrackDAW";
+import { MetalHistoryStudio } from "./components/MetalHistoryStudio";
 import { MidiSettingsModal } from "./components/MidiSettingsModal";
 import { FooterVuMeter } from "./components/FooterVuMeter";
 
@@ -75,6 +77,18 @@ export default function App() {
         )}
         {currentTab === "tuner" && <DropCTuner />}
         {currentTab === "daw" && <MultitrackDAW />}
+        {currentTab === "metal-history" && (
+          <MetalHistoryStudio
+            onSelectPreset={(presetId) => {
+              // Apply preset through audioEngine
+              const preset = FACTORY_PRESETS.find((p) => p.id === presetId);
+              if (preset) {
+                audioEngine.applyAmpParams(preset.params);
+              }
+            }}
+            onNavigateToAmp={() => setCurrentTab("amp-rig")}
+          />
+        )}
       </main>
 
       {/* MIDI Controller Settings Modal */}

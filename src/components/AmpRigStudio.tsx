@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { AudioEngine } from "../audio/audioEngine";
 import { FACTORY_PRESETS } from "../audio/presetLibrary";
-import { AmpParams, AmpPreset, PresetCategory } from "../types";
+import { AmpParams, AmpPreset, PresetCategory, PresetUsageStat } from "../types";
 import { Knob } from "./Knob";
+import { SpectralAnalyzer } from "./SpectralAnalyzer";
 import {
   Mic,
   MicOff,
@@ -22,6 +23,9 @@ import {
   Flame,
   Search,
   Filter,
+  Clock,
+  Activity,
+  TrendingUp,
 } from "lucide-react";
 
 export const AmpRigStudio: React.FC = () => {
@@ -38,12 +42,66 @@ export const AmpRigStudio: React.FC = () => {
   const [currentPresetId, setCurrentPresetId] = useState<string>("preset-5150-chug");
   const [selectedCategory, setSelectedCategory] = useState<PresetCategory>("All");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [sortBy, setSortBy] = useState<"default" | "most-played" | "recently-used">("default");
   const [customPresetCategory, setCustomPresetCategory] = useState<"High-Gain" | "Clean" | "Experimental" | "Custom">("High-Gain");
   const [params, setParams] = useState<AmpParams>(FACTORY_PRESETS[0].params);
   const [isLiveInputActive, setIsLiveInputActive] = useState(false);
   const [inputBuffer, setInputBuffer] = useState<number>(256);
   const [customPresetName, setCustomPresetName] = useState("");
   const [showSaveModal, setShowSaveModal] = useState(false);
+
+  // Preset Usage Insights State (Times Played + Last Used Timestamp)
+  const [usageStats, setUsageStats] = useState<Record<string, PresetUsageStat>>(() => {
+    try {
+      const stored = localStorage.getItem("dropc_preset_usage_stats");
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch {
+      // ignore
+    }
+    return {
+      "preset-5150-chug": { count: 3, lastUsed: Date.now() - 1000 * 60 * 2 },
+      "preset-mesa-nu-metal": { count: 2, lastUsed: Date.now() - 1000 * 60 * 18 },
+      "preset-djent-808": { count: 1, lastUsed: Date.now() - 1000 * 60 * 65 },
+    };
+  });
+
+  const recordPresetUsage = (presetId: string) => {
+    setUsageStats((prev) => {
+      const existing = prev[presetId] || { count: 0, lastUsed: 0 };
+      const updated = {
+        ...prev,
+        [presetId]: {
+          count: existing.count + 1,
+          lastUsed: Date.now(),
+        },
+      };
+      try {
+        localStorage.setItem("dropc_preset_usage_stats", JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+  };
+
+  const formatLastUsed = (timestamp: number | undefined, isSelected: boolean): string => {
+    if (isSelected) return "Active now";
+    if (!timestamp || timestamp === 0) return "Never used";
+    const elapsedSec = Math.max(1, Math.floor((Date.now() - timestamp) / 1000));
+    if (elapsedSec < 45) return "Just now";
+    if (elapsedSec < 60) return `${elapsedSec}s ago`;
+    const elapsedMin = Math.floor(elapsedSec / 60);
+    if (elapsedMin < 60) return `${elapsedMin}m ago`;
+    const elapsedHours = Math.floor(elapsedMin / 60);
+    if (elapsedHours < 24) return `${elapsedHours}h ago`;
+    const elapsedDays = Math.floor(elapsedHours / 24);
+    if (elapsedDays === 1) return "Yesterday";
+    if (elapsedDays < 7) return `${elapsedDays}d ago`;
+    const elapsedWeeks = Math.floor(elapsedDays / 7);
+    return `${elapsedWeeks}w ago`;
+  };
 
   // Audio sample hover preview state
   const [hoverAuditionEnabled, setHoverAuditionEnabled] = useState(true);
@@ -58,9 +116,9 @@ export const AmpRigStudio: React.FC = () => {
   // Metering state
   const [levels, setLevels] = useState({ in: 0, out: 0, gate: true });
 
-  // Filtered preset list based on category & search query
+  // Filtered and Sorted preset list based on category, search query & sort mode
   const filteredPresets = useMemo(() => {
-    return presets.filter((preset) => {
+    const list = presets.filter((preset) => {
       // Determine category (fallback if missing)
       const cat = preset.category || (preset.id.startsWith("custom-") ? "Custom" : "High-Gain");
       
@@ -78,7 +136,25 @@ export const AmpRigStudio: React.FC = () => {
 
       return matchesCategory && matchesSearch;
     });
-  }, [presets, selectedCategory, searchQuery]);
+
+    if (sortBy === "most-played") {
+      return [...list].sort((a, b) => {
+        const countA = usageStats[a.id]?.count || 0;
+        const countB = usageStats[b.id]?.count || 0;
+        return countB - countA;
+      });
+    }
+
+    if (sortBy === "recently-used") {
+      return [...list].sort((a, b) => {
+        const timeA = usageStats[a.id]?.lastUsed || 0;
+        const timeB = usageStats[b.id]?.lastUsed || 0;
+        return timeB - timeA;
+      });
+    }
+
+    return list;
+  }, [presets, selectedCategory, searchQuery, sortBy, usageStats]);
 
   // Counts per category
   const categoryCounts = useMemo(() => {
@@ -136,6 +212,7 @@ export const AmpRigStudio: React.FC = () => {
     setParams(preset.params);
     activeParamsRef.current = preset.params;
     audioEngine.applyAmpParams(preset.params);
+    recordPresetUsage(preset.id);
   };
 
   const handlePresetMouseEnter = (preset: AmpPreset) => {
@@ -246,6 +323,7 @@ export const AmpRigStudio: React.FC = () => {
     const updated = [...presets, newPreset];
     setPresets(updated);
     setCurrentPresetId(newPreset.id);
+    recordPresetUsage(newPreset.id);
     localStorage.setItem(
       "dropc_metal_custom_presets",
       JSON.stringify(updated.filter((p) => p.id.startsWith("custom-")))
@@ -452,8 +530,8 @@ export const AmpRigStudio: React.FC = () => {
           </div>
         </div>
 
-        {/* Categorical Filtering Tabs & Search Toolbar */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        {/* Categorical Filtering Tabs, Sort & Search Toolbar */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           {/* Category Filter Pills */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
             {(["All", "High-Gain", "Clean", "Experimental", "Custom"] as PresetCategory[]).map((cat) => {
@@ -486,24 +564,69 @@ export const AmpRigStudio: React.FC = () => {
             })}
           </div>
 
-          {/* Search Filter Input */}
-          <div className="relative min-w-[200px] md:w-64">
-            <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search tone, genre, amp..."
-              className="w-full bg-[#0A0A0B] border border-[#222226] rounded-xl pl-8 pr-3 py-1.5 text-xs text-gray-200 font-mono focus:border-[#CCFF00] outline-none placeholder:text-gray-600 transition-colors"
-            />
-            {searchQuery && (
+          {/* Right Tools: Sort Mode & Search Filter Input */}
+          <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
+            {/* Sort Mode Selector */}
+            <div className="flex items-center bg-[#0A0A0B] border border-[#222226] rounded-xl p-0.5 text-[11px] font-mono shrink-0">
               <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs font-mono"
+                type="button"
+                onClick={() => setSortBy("default")}
+                className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+                  sortBy === "default"
+                    ? "bg-[#1D1D21] text-[#CCFF00] font-bold"
+                    : "text-gray-400 hover:text-gray-200"
+                }`}
+                title="Default Preset Order"
               >
-                ✕
+                Default
               </button>
-            )}
+              <button
+                type="button"
+                onClick={() => setSortBy("most-played")}
+                className={`px-2 py-1 rounded-lg transition-colors flex items-center gap-1 cursor-pointer ${
+                  sortBy === "most-played"
+                    ? "bg-[#1D1D21] text-[#CCFF00] font-bold"
+                    : "text-gray-400 hover:text-gray-200"
+                }`}
+                title="Sort by Times Played"
+              >
+                <Activity className="w-3 h-3" />
+                <span>Most Played</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortBy("recently-used")}
+                className={`px-2 py-1 rounded-lg transition-colors flex items-center gap-1 cursor-pointer ${
+                  sortBy === "recently-used"
+                    ? "bg-[#1D1D21] text-[#CCFF00] font-bold"
+                    : "text-gray-400 hover:text-gray-200"
+                }`}
+                title="Sort by Recently Used"
+              >
+                <Clock className="w-3 h-3" />
+                <span>Recent</span>
+              </button>
+            </div>
+
+            {/* Search Filter Input */}
+            <div className="relative flex-1 min-w-[180px] md:w-56">
+              <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search tone, genre, amp..."
+                className="w-full bg-[#0A0A0B] border border-[#222226] rounded-xl pl-8 pr-3 py-1.5 text-xs text-gray-200 font-mono focus:border-[#CCFF00] outline-none placeholder:text-gray-600 transition-colors"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs font-mono"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -514,6 +637,7 @@ export const AmpRigStudio: React.FC = () => {
               const isSelected = currentPresetId === preset.id;
               const isAuditioning = auditioningPresetId === preset.id;
               const cat = preset.category || (preset.id.startsWith("custom-") ? "Custom" : "High-Gain");
+              const usage = usageStats[preset.id] || { count: 0, lastUsed: 0 };
               return (
                 <div
                   key={preset.id}
@@ -593,15 +717,45 @@ export const AmpRigStudio: React.FC = () => {
                     </p>
                   </div>
 
-                  <div className="mt-2.5 pt-2 border-t border-[#222226] flex items-center justify-between text-[10px] font-mono">
-                    <span className="text-gray-500 truncate">{preset.params.ampModel}</span>
-                    {isAuditioning ? (
-                      <span className="text-[#CCFF00] font-bold uppercase tracking-wider animate-pulse flex items-center gap-1">
-                        <Radio className="w-2.5 h-2.5" /> Auditioning
-                      </span>
-                    ) : (
-                      <span className="text-[#CCFF00] font-bold">Gain: {preset.params.gain.toFixed(1)}</span>
-                    )}
+                  <div className="mt-2.5 pt-2 border-t border-[#222226] space-y-1.5">
+                    {/* Amp Model & Gain */}
+                    <div className="flex items-center justify-between text-[10px] font-mono">
+                      <span className="text-gray-500 truncate max-w-[130px]">{preset.params.ampModel}</span>
+                      {isAuditioning ? (
+                        <span className="text-[#CCFF00] font-bold uppercase tracking-wider animate-pulse flex items-center gap-1">
+                          <Radio className="w-2.5 h-2.5" /> Auditioning
+                        </span>
+                      ) : (
+                        <span className="text-[#CCFF00] font-bold">Gain: {preset.params.gain.toFixed(1)}</span>
+                      )}
+                    </div>
+
+                    {/* Usage Insights Bar: Last Used & Times Played */}
+                    <div className="pt-1 border-t border-[#1a1a1e] flex items-center justify-between text-[9.5px] font-mono">
+                      <div
+                        className="flex items-center gap-1 text-gray-500"
+                        title={
+                          usage.lastUsed
+                            ? `Last loaded: ${new Date(usage.lastUsed).toLocaleString()}`
+                            : "Never loaded yet"
+                        }
+                      >
+                        <Clock className="w-2.5 h-2.5 text-gray-500 shrink-0" />
+                        <span className={isSelected ? "text-[#CCFF00] font-bold" : "text-gray-400"}>
+                          {formatLastUsed(usage.lastUsed, isSelected)}
+                        </span>
+                      </div>
+
+                      <div
+                        className="flex items-center gap-1"
+                        title={`Total times loaded: ${usage.count}`}
+                      >
+                        <Activity className={`w-2.5 h-2.5 shrink-0 ${usage.count > 0 ? "text-[#CCFF00]" : "text-gray-600"}`} />
+                        <span className={usage.count > 0 ? "text-gray-300 font-semibold" : "text-gray-600"}>
+                          {usage.count} {usage.count === 1 ? "play" : "plays"}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
@@ -623,6 +777,9 @@ export const AmpRigStudio: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Real-Time Spectral Frequency Analyzer & DSP Visualizer Widget */}
+      <SpectralAnalyzer params={params} onTestRiff={handleTestRiff} />
 
       {/* Main Amp Head Chassis */}
       <div className="bg-gradient-to-b from-[#141416] via-[#0A0A0B] to-[#141416] border-2 border-[#222226] rounded-3xl p-5 sm:p-7 shadow-2xl relative overflow-hidden">

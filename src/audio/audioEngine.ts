@@ -827,6 +827,38 @@ export class AudioEngine {
     });
   }
 
+  // Quick Preset Test Riff generators
+  public playTestChug(): void {
+    [0, 0.12, 0.24, 0.36, 0.48, 0.6, 0.72].forEach((t) => {
+      setTimeout(() => {
+        this.playDropCVoicing([0, 0, 0, "x", "x", "x"], true, 0.15);
+      }, t * 1000);
+    });
+  }
+
+  public playTestGallop(): void {
+    [0, 0.1, 0.2, 0.4, 0.5, 0.6, 0.8].forEach((t, i) => {
+      const fret = i === 6 ? 8 : 0;
+      setTimeout(() => {
+        this.playDropCVoicing([fret, fret, fret, "x", "x", "x"], i !== 6, 0.2);
+      }, t * 1000);
+    });
+  }
+
+  public playTestAdd9(): void {
+    this.playDropCVoicing([0, 0, 0, 2, 3, "x"], false, 1.2);
+    setTimeout(() => this.playDropCVoicing([8, 8, 8, 10, 12, "x"], false, 1.5), 600);
+  }
+
+  public playTestBreakdown(): void {
+    [0, 0.15, 0.4, 0.55, 0.8, 1.1].forEach((t, i) => {
+      const fret = i === 5 ? 1 : 0;
+      setTimeout(() => {
+        this.playDropCVoicing([fret, fret, fret, "x", "x", "x"], true, 0.25);
+      }, t * 1000);
+    });
+  }
+
   // Stop active preset sample audition
   public stopPresetAudition(): void {
     if (this.previewTimers.length > 0) {

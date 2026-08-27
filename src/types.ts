@@ -116,6 +116,11 @@ export interface AmpParams {
 
 export type PresetCategory = "All" | "High-Gain" | "Clean" | "Experimental" | "Custom";
 
+export interface PresetUsageStat {
+  count: number;
+  lastUsed: number; // epoch timestamp in ms
+}
+
 export interface AmpPreset {
   id: string;
   name: string;
