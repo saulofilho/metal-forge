@@ -1,0 +1,6 @@
+{
+  "name": "DropC MetalForge - Metal Transposer, Amp Rig & DAW",
+  "description": "Professional metal workstation: transpose any song chords to heavy Drop C metal riffs, interactive Drop C tuner, high-fidelity DSP amp & effects modeling, live MIDI pedalboard control, and multitrack audio DAW with waveform editing.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

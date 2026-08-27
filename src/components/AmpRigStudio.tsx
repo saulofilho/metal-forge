@@ -1,0 +1,871 @@
+import React, { useState, useEffect } from "react";
+import { AudioEngine } from "../audio/audioEngine";
+import { FACTORY_PRESETS } from "../audio/presetLibrary";
+import { AmpParams, AmpPreset } from "../types";
+import { Knob } from "./Knob";
+import {
+  Mic,
+  MicOff,
+  Sliders,
+  Play,
+  Save,
+  Download,
+  Upload,
+  Zap,
+  Layers,
+  Radio,
+} from "lucide-react";
+
+export const AmpRigStudio: React.FC = () => {
+  const audioEngine = AudioEngine.getInstance();
+  const [presets, setPresets] = useState<AmpPreset[]>(() => {
+    try {
+      const custom = localStorage.getItem("dropc_metal_custom_presets");
+      return custom ? [...FACTORY_PRESETS, ...JSON.parse(custom)] : FACTORY_PRESETS;
+    } catch {
+      return FACTORY_PRESETS;
+    }
+  });
+
+  const [currentPresetId, setCurrentPresetId] = useState<string>("preset-5150-chug");
+  const [params, setParams] = useState<AmpParams>(FACTORY_PRESETS[0].params);
+  const [isLiveInputActive, setIsLiveInputActive] = useState(false);
+  const [inputBuffer, setInputBuffer] = useState<number>(256);
+  const [customPresetName, setCustomPresetName] = useState("");
+  const [showSaveModal, setShowSaveModal] = useState(false);
+
+  // Metering state
+  const [levels, setLevels] = useState({ in: 0, out: 0, gate: true });
+
+  useEffect(() => {
+    audioEngine.init().then(() => {
+      audioEngine.applyAmpParams(params);
+    });
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLevels({
+        in: audioEngine.inputLevel,
+        out: audioEngine.outputLevel,
+        gate: audioEngine.isGateOpen,
+      });
+    }, 60);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleParamChange = <K extends keyof AmpParams>(key: K, value: AmpParams[K]) => {
+    const updated = { ...params, [key]: value };
+    setParams(updated);
+    audioEngine.applyAmpParams(updated);
+  };
+
+  const handleSelectPreset = (preset: AmpPreset) => {
+    setCurrentPresetId(preset.id);
+    setParams(preset.params);
+    audioEngine.applyAmpParams(preset.params);
+  };
+
+  const handleToggleLiveInput = async () => {
+    if (isLiveInputActive) {
+      audioEngine.disableLiveInput();
+      setIsLiveInputActive(false);
+    } else {
+      const ok = await audioEngine.enableLiveInput(inputBuffer);
+      if (ok) {
+        setIsLiveInputActive(true);
+      } else {
+        alert("Could not access microphone/audio interface. Please check browser permissions!");
+      }
+    }
+  };
+
+  // Virtual Test Riff triggers
+  const handleTestRiff = (type: "chug" | "gallop" | "add9" | "breakdown") => {
+    audioEngine.init().then(() => {
+      if (type === "chug") {
+        // 0-0-0 16th triplets
+        [0, 0.12, 0.24, 0.36, 0.48, 0.6, 0.72].forEach((t) => {
+          setTimeout(() => {
+            audioEngine.playDropCVoicing([0, 0, 0, "x", "x", "x"], true, 0.15);
+          }, t * 1000);
+        });
+      } else if (type === "gallop") {
+        // 16th-16th-8th gallop into 8th fret
+        [0, 0.1, 0.2, 0.4, 0.5, 0.6, 0.8].forEach((t, i) => {
+          const fret = i === 6 ? 8 : 0;
+          setTimeout(() => {
+            audioEngine.playDropCVoicing([fret, fret, fret, "x", "x", "x"], i !== 6, 0.2);
+          }, t * 1000);
+        });
+      } else if (type === "add9") {
+        // Melodic Add9 ringing chord
+        audioEngine.playDropCVoicing([0, 0, 0, 2, 3, "x"], false, 1.2);
+        setTimeout(() => audioEngine.playDropCVoicing([8, 8, 8, 10, 12, "x"], false, 1.5), 600);
+      } else if (type === "breakdown") {
+        // Crushing 0-0-0 into tritone
+        [0, 0.2, 0.5, 0.8, 1.1].forEach((t, i) => {
+          const fret = i === 2 ? 1 : 0;
+          setTimeout(() => {
+            audioEngine.playDropCVoicing([fret, fret, fret, "x", "x", "x"], i !== 2, 0.35);
+          }, t * 1000);
+        });
+      }
+    });
+  };
+
+  const handleSaveCustomPreset = () => {
+    if (!customPresetName) return;
+    const newPreset: AmpPreset = {
+      id: `custom-${Date.now()}`,
+      name: customPresetName,
+      subgenre: "Metalcore",
+      description: "Custom user dialed rig preset.",
+      iconName: "Flame",
+      params: { ...params },
+    };
+
+    const updated = [...presets, newPreset];
+    setPresets(updated);
+    setCurrentPresetId(newPreset.id);
+    localStorage.setItem(
+      "dropc_metal_custom_presets",
+      JSON.stringify(updated.filter((p) => p.id.startsWith("custom-")))
+    );
+    setShowSaveModal(false);
+    setCustomPresetName("");
+  };
+
+  const handleExportPresetsJson = () => {
+    const blob = new Blob([JSON.stringify(presets, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "dropc-metalforge-presets.json";
+    a.click();
+  };
+
+  const handleImportPresetsJson = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target?.result as string);
+        if (Array.isArray(parsed)) {
+          setPresets(parsed);
+          localStorage.setItem(
+            "dropc_metal_custom_presets",
+            JSON.stringify(parsed.filter((p) => p.id.startsWith("custom-")))
+          );
+        }
+      } catch (err) {
+        alert("Invalid preset JSON file.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <div id="amp-rig-studio" className="space-y-6">
+      {/* Top Controls & Live Input Bento Bar */}
+      <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 sm:p-5 shadow-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        {/* Live Input Setup */}
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            id="btn-toggle-live-input"
+            onClick={handleToggleLiveInput}
+            className={`px-4 py-2 rounded-xl font-mono text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+              isLiveInputActive
+                ? "bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/30"
+                : "bg-[#1D1D21] hover:bg-[#CCFF00] hover:text-black text-gray-200 border border-[#333338]"
+            }`}
+          >
+            {isLiveInputActive ? (
+              <>
+                <Mic className="w-4 h-4" /> GUITAR INPUT: ACTIVE
+              </>
+            ) : (
+              <>
+                <MicOff className="w-4 h-4 text-gray-400" /> CONNECT LIVE GUITAR
+              </>
+            )}
+          </button>
+
+          {/* Latency Buffer Mode */}
+          <div className="flex items-center gap-1.5 bg-[#0A0A0B] px-3 py-1.5 rounded-xl border border-[#222226] text-xs font-mono">
+            <span className="text-gray-500 uppercase text-[10px] font-bold">BUFFER:</span>
+            <select
+              value={inputBuffer}
+              onChange={(e) => setInputBuffer(Number(e.target.value))}
+              disabled={isLiveInputActive}
+              className="bg-transparent text-[#CCFF00] font-bold outline-none cursor-pointer"
+            >
+              <option value={128} className="bg-[#141416] text-white">128 (Ultra-Low ~2.7ms)</option>
+              <option value={256} className="bg-[#141416] text-white">256 (Balanced ~5.3ms)</option>
+              <option value={512} className="bg-[#141416] text-white">512 (Stable ~10.6ms)</option>
+            </select>
+          </div>
+
+          {/* VU Meters */}
+          <div className="flex items-center gap-3 bg-[#0A0A0B] px-3 py-1.5 rounded-xl border border-[#222226]">
+            <div className="flex items-center gap-1.5 text-[10px] font-mono">
+              <span className="text-gray-500 uppercase font-bold">IN:</span>
+              <div className="w-16 h-2 bg-[#1D1D21] rounded-full overflow-hidden flex border border-[#333338]">
+                <div
+                  className="h-full bg-emerald-500 transition-all duration-75"
+                  style={{ width: `${Math.min(100, levels.in * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 text-[10px] font-mono">
+              <span className="text-gray-500 uppercase font-bold">OUT:</span>
+              <div className="w-16 h-2 bg-[#1D1D21] rounded-full overflow-hidden flex border border-[#333338]">
+                <div
+                  className={`h-full transition-all duration-75 ${
+                    levels.out > 0.85 ? "bg-red-500" : "bg-[#CCFF00]"
+                  }`}
+                  style={{ width: `${Math.min(100, levels.out * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Noise Gate LED */}
+            <div className="flex items-center gap-1.5 text-[10px] font-mono">
+              <span className="text-gray-500 uppercase font-bold">GATE:</span>
+              <span
+                className={`w-2.5 h-2.5 rounded-full ${
+                  levels.gate ? "bg-[#CCFF00] shadow-[0_0_8px_rgba(204,255,0,0.9)]" : "bg-gray-700"
+                }`}
+                title={levels.gate ? "Gate Open" : "Gate Clamped"}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Virtual Riff Tester Bar */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs scrollbar-none">
+          <span className="text-[10px] font-mono text-gray-500 uppercase tracking-widest whitespace-nowrap flex items-center gap-1 font-bold">
+            <Radio className="w-3.5 h-3.5 text-[#CCFF00]" /> Test Rig:
+          </span>
+          <button
+            onClick={() => handleTestRiff("chug")}
+            className="px-2.5 py-1 rounded-lg bg-[#1D1D21] hover:bg-[#CCFF00] hover:text-black text-gray-200 text-[11px] font-mono font-bold flex items-center gap-1 transition-all border border-[#333338] cursor-pointer"
+          >
+            <Play className="w-2.5 h-2.5 fill-current" /> 0-0-0 Chug
+          </button>
+          <button
+            onClick={() => handleTestRiff("gallop")}
+            className="px-2.5 py-1 rounded-lg bg-[#1D1D21] hover:bg-[#CCFF00] hover:text-black text-gray-200 text-[11px] font-mono font-bold flex items-center gap-1 transition-all border border-[#333338] cursor-pointer"
+          >
+            <Play className="w-2.5 h-2.5 fill-current" /> Thrash Gallop
+          </button>
+          <button
+            onClick={() => handleTestRiff("add9")}
+            className="px-2.5 py-1 rounded-lg bg-[#1D1D21] hover:bg-[#CCFF00] hover:text-black text-gray-200 text-[11px] font-mono font-bold flex items-center gap-1 transition-all border border-[#333338] cursor-pointer"
+          >
+            <Play className="w-2.5 h-2.5 fill-current" /> Melodic Add9
+          </button>
+          <button
+            onClick={() => handleTestRiff("breakdown")}
+            className="px-2.5 py-1 rounded-lg bg-[#1D1D21] hover:bg-[#CCFF00] hover:text-black text-gray-200 text-[11px] font-mono font-bold flex items-center gap-1 transition-all border border-[#333338] cursor-pointer"
+          >
+            <Play className="w-2.5 h-2.5 fill-current" /> Slam Breakdown
+          </button>
+        </div>
+      </div>
+
+      {/* Preset Selector Bento Grid */}
+      <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 sm:p-5 shadow-2xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#222226]">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-[#CCFF00]" />
+            <h3 className="text-xs sm:text-sm font-bold text-white font-mono uppercase tracking-widest">
+              AMP RIG PRESET LIBRARY ({presets.length})
+            </h3>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSaveModal(true)}
+              className="px-3 py-1.5 rounded-lg bg-[#1D1D21] hover:bg-[#25252b] text-gray-200 text-xs font-mono font-bold flex items-center gap-1.5 transition-all border border-[#333338] cursor-pointer"
+            >
+              <Save className="w-3.5 h-3.5" /> Save Preset
+            </button>
+            <button
+              onClick={handleExportPresetsJson}
+              className="p-1.5 rounded-lg bg-[#1D1D21] hover:bg-[#25252b] text-gray-300 transition-all border border-[#333338] cursor-pointer"
+              title="Export Presets JSON"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
+            <label
+              className="p-1.5 rounded-lg bg-[#1D1D21] hover:bg-[#25252b] text-gray-300 transition-all border border-[#333338] cursor-pointer"
+              title="Import Presets JSON"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <input type="file" accept=".json" onChange={handleImportPresetsJson} className="hidden" />
+            </label>
+          </div>
+        </div>
+
+        {/* Preset Cards Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 mt-3">
+          {presets.map((preset) => {
+            const isSelected = currentPresetId === preset.id;
+            return (
+              <button
+                key={preset.id}
+                id={`preset-btn-${preset.id}`}
+                onClick={() => handleSelectPreset(preset)}
+                className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer ${
+                  isSelected
+                    ? "bg-[#1D1D21] border-[#CCFF00] shadow-[0_0_15px_rgba(204,255,0,0.25)] ring-1 ring-[#CCFF00]"
+                    : "bg-[#0A0A0B] border-[#222226] hover:border-[#333338]"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold ${
+                        isSelected ? "bg-[#CCFF00] text-black" : "bg-[#141416] text-gray-400 border border-[#333338]"
+                      }`}
+                    >
+                      {preset.subgenre}
+                    </span>
+                    {isSelected && (
+                      <span className="w-2 h-2 rounded-full bg-[#CCFF00] shadow-[0_0_6px_rgba(204,255,0,0.9)] animate-pulse" />
+                    )}
+                  </div>
+                  <h4 className="font-bold text-xs sm:text-sm font-mono text-gray-100 mt-1.5 line-clamp-1">
+                    {preset.name}
+                  </h4>
+                  <p className="text-[11px] text-gray-400 mt-1 line-clamp-2">{preset.description}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Main Amp Head Chassis */}
+      <div className="bg-gradient-to-b from-[#141416] via-[#0A0A0B] to-[#141416] border-2 border-[#222226] rounded-3xl p-5 sm:p-7 shadow-2xl relative overflow-hidden">
+        {/* Metal corners */}
+        <div className="absolute top-2 left-2 w-6 h-6 border-t-2 border-l-2 border-[#333338] pointer-events-none" />
+        <div className="absolute top-2 right-2 w-6 h-6 border-t-2 border-r-2 border-[#333338] pointer-events-none" />
+        <div className="absolute bottom-2 left-2 w-6 h-6 border-b-2 border-l-2 border-[#333338] pointer-events-none" />
+        <div className="absolute bottom-2 right-2 w-6 h-6 border-b-2 border-r-2 border-[#333338] pointer-events-none" />
+
+        {/* Amp Logo & Glowing Vacuum Tubes Grid */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#222226]">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#0A0A0B] border border-[#222226] flex items-center justify-center text-[#CCFF00] shadow-[0_0_15px_rgba(204,255,0,0.25)]">
+              <Zap className="w-6 h-6 fill-current" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xl sm:text-2xl font-black font-mono tracking-wider text-white">
+                  {params.ampModel.toUpperCase()}
+                </h3>
+                <span className="px-2 py-0.5 rounded bg-[#1D1D21] text-[#CCFF00] font-mono text-[10px] font-bold border border-[#333338]">
+                  TUBE STAGE
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 font-mono mt-0.5">
+                Class A/B Push-Pull Tube Power Stage • Drop C Low Frequency Tuned
+              </p>
+            </div>
+          </div>
+
+          {/* Glowing Vacuum Tube Emulation Window */}
+          <div className="flex items-center gap-3 bg-[#0A0A0B] px-4 py-2 rounded-xl border border-[#222226] shadow-inner">
+            <span className="text-[9px] font-mono text-gray-500 uppercase font-bold tracking-widest">TUBES:</span>
+            <div className="flex items-center gap-2">
+              {[1, 2, 3, 4].map((tube) => {
+                const glowIntensity = 0.4 + (params.gain / 10) * 0.6;
+                return (
+                  <div key={tube} className="flex flex-col items-center">
+                    <div
+                      className="w-3.5 h-7 rounded-t-full bg-gradient-to-t from-orange-600 via-amber-400 to-yellow-200 border border-orange-500/60 shadow-lg transition-all duration-300"
+                      style={{
+                        opacity: glowIntensity,
+                        boxShadow: `0 0 ${10 * glowIntensity}px rgba(204, 255, 0, ${glowIntensity * 0.7})`,
+                      }}
+                    />
+                    <span className="text-[8px] text-gray-500 font-mono mt-0.5">12AX7</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Amp Head Model Switcher */}
+        <div className="mt-4 flex items-center gap-2 flex-wrap text-xs">
+          <span className="font-mono text-gray-500 uppercase text-[10px] font-bold tracking-widest">AMP MODEL:</span>
+          {(
+            [
+              "5150 High-Gain",
+              "Mesa Dual Rectifier",
+              "Diezel VH4",
+              "ENGL Savage",
+              "Marshall JCM800",
+              "HM-2 Chainsaw",
+            ] as const
+          ).map((m) => (
+            <button
+              key={m}
+              onClick={() => handleParamChange("ampModel", m)}
+              className={`px-3 py-1 rounded-lg font-mono text-xs font-bold transition-all border cursor-pointer ${
+                params.ampModel === m
+                  ? "bg-[#CCFF00] text-black border-[#CCFF00] shadow-[0_0_10px_rgba(204,255,0,0.4)]"
+                  : "bg-[#1D1D21] hover:bg-[#25252b] text-gray-300 border-[#333338]"
+              }`}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+
+        {/* Amp Head Main Knobs Row */}
+        <div className="mt-6 p-5 rounded-2xl bg-[#0A0A0B] border border-[#222226] shadow-inner grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-4">
+          <Knob
+            label="GAIN"
+            value={params.gain}
+            min={0}
+            max={10}
+            color="red"
+            size="lg"
+            onChange={(v) => handleParamChange("gain", v)}
+          />
+          <Knob
+            label="BASS"
+            value={params.bass}
+            min={0}
+            max={10}
+            color="lime"
+            size="lg"
+            onChange={(v) => handleParamChange("bass", v)}
+          />
+          <Knob
+            label="MIDDLE"
+            value={params.middle}
+            min={0}
+            max={10}
+            color="yellow"
+            size="lg"
+            onChange={(v) => handleParamChange("middle", v)}
+          />
+          <Knob
+            label="TREBLE"
+            value={params.treble}
+            min={0}
+            max={10}
+            color="orange"
+            size="lg"
+            onChange={(v) => handleParamChange("treble", v)}
+          />
+          <Knob
+            label="PRESENCE"
+            value={params.presence}
+            min={0}
+            max={10}
+            color="cyan"
+            size="lg"
+            onChange={(v) => handleParamChange("presence", v)}
+          />
+          <Knob
+            label="RESONANCE"
+            value={params.resonance}
+            min={0}
+            max={10}
+            color="purple"
+            size="lg"
+            onChange={(v) => handleParamChange("resonance", v)}
+          />
+          <Knob
+            label="MASTER"
+            value={params.master}
+            min={0}
+            max={10}
+            color="emerald"
+            size="lg"
+            onChange={(v) => handleParamChange("master", v)}
+          />
+        </div>
+      </div>
+
+      {/* Pre-FX & Post-FX Stompboxes and Cabinet Simulator Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+        {/* PRE-FX PEDALS: Gate & Tube Screamer */}
+        <div className="md:col-span-4 space-y-4">
+          {/* Noise Gate Pedal */}
+          <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+            <div className="flex items-center justify-between pb-3 border-b border-[#222226]">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    params.gateEnabled ? "bg-[#CCFF00] shadow-[0_0_8px_rgba(204,255,0,0.9)]" : "bg-gray-700"
+                  }`}
+                />
+                <h4 className="font-mono text-xs font-bold text-white uppercase tracking-wider">PRECISION NOISE GATE</h4>
+              </div>
+              <button
+                onClick={() => handleParamChange("gateEnabled", !params.gateEnabled)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all border cursor-pointer ${
+                  params.gateEnabled
+                    ? "bg-[#CCFF00] text-black border-[#CCFF00] shadow-sm"
+                    : "bg-[#1D1D21] text-gray-400 border-[#333338]"
+                }`}
+              >
+                {params.gateEnabled ? "ON" : "BYPASS"}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mt-3">
+              <Knob
+                label="THRESH"
+                value={params.gateThreshold}
+                min={-80}
+                max={-20}
+                unit="dB"
+                color="lime"
+                size="md"
+                onChange={(v) => handleParamChange("gateThreshold", v)}
+              />
+              <Knob
+                label="RELEASE"
+                value={params.gateRelease * 1000}
+                min={10}
+                max={200}
+                unit="ms"
+                color="cyan"
+                size="md"
+                onChange={(v) => handleParamChange("gateRelease", v / 1000)}
+              />
+            </div>
+          </div>
+
+          {/* Tube Screamer TS9 Overdrive Pedal */}
+          <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+            <div className="flex items-center justify-between pb-3 border-b border-[#222226]">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    params.driveEnabled ? "bg-[#CCFF00] shadow-[0_0_8px_rgba(204,255,0,0.9)]" : "bg-gray-700"
+                  }`}
+                />
+                <h4 className="font-mono text-xs font-bold text-[#CCFF00] uppercase tracking-wider">TS9 OVERDRIVE BOOST</h4>
+              </div>
+              <button
+                onClick={() => handleParamChange("driveEnabled", !params.driveEnabled)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all border cursor-pointer ${
+                  params.driveEnabled
+                    ? "bg-[#CCFF00] text-black border-[#CCFF00] shadow-md"
+                    : "bg-[#1D1D21] text-gray-400 border-[#333338]"
+                }`}
+              >
+                {params.driveEnabled ? "ENGAGED" : "BYPASS"}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 mt-3">
+              <Knob
+                label="DRIVE"
+                value={params.driveGain}
+                min={0}
+                max={10}
+                color="lime"
+                size="md"
+                onChange={(v) => handleParamChange("driveGain", v)}
+              />
+              <Knob
+                label="TONE"
+                value={params.driveTone}
+                min={0}
+                max={10}
+                color="yellow"
+                size="md"
+                onChange={(e) => handleParamChange("driveTone", e)}
+              />
+              <Knob
+                label="LEVEL"
+                value={params.driveLevel}
+                min={0}
+                max={10}
+                color="orange"
+                size="md"
+                onChange={(e) => handleParamChange("driveLevel", e)}
+              />
+            </div>
+
+            <div className="mt-3 pt-2 border-t border-[#222226] flex items-center justify-between">
+              <span className="text-[11px] font-mono text-gray-400">720Hz Tight Mid Boost:</span>
+              <button
+                onClick={() => handleParamChange("driveMidBoost", !params.driveMidBoost)}
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border cursor-pointer ${
+                  params.driveMidBoost
+                    ? "bg-[#CCFF00] text-black border-[#CCFF00]"
+                    : "bg-[#1D1D21] text-gray-400 border-[#333338]"
+                }`}
+              >
+                {params.driveMidBoost ? "ACTIVE" : "OFF"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* CABINET & MIC SIMULATOR */}
+        <div className="md:col-span-4 bg-[#141416] border border-[#222226] rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-[#222226]">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-[#CCFF00]" />
+                <h4 className="font-mono text-xs font-bold text-white uppercase tracking-wider">4x12 CAB & MIC SIMULATOR</h4>
+              </div>
+              <span className="text-[10px] font-mono text-[#CCFF00] font-bold">IMPULSE DSP</span>
+            </div>
+
+            <div className="space-y-3 mt-3">
+              <div>
+                <label className="block text-[10px] font-mono font-bold uppercase tracking-widest text-gray-500 mb-1">
+                  CABINET IMPULSE:
+                </label>
+                <select
+                  value={params.cabModel}
+                  onChange={(e) => handleParamChange("cabModel", e.target.value as any)}
+                  className="w-full bg-[#0A0A0B] border border-[#222226] rounded-xl px-2.5 py-2 text-xs text-gray-100 font-mono focus:border-[#CCFF00] outline-none cursor-pointer"
+                >
+                  <option value="Mesa OS 4x12 V30">Mesa Boogie Oversized 4x12 (V30s)</option>
+                  <option value="Marshall 1960A Greenback">Marshall 1960A (Celestion Greenbacks)</option>
+                  <option value="ENGL Pro V30">ENGL Pro Straight 4x12 (V30s)</option>
+                  <option value="Peavey 5150 Sheffield">Peavey 5150 Sheffield 1200 4x12</option>
+                  <option value="Orange PPC412">Orange PPC412 Heavy Celestion</option>
+                  <option value="Diezel 4x12">Diezel Front Loaded 4x12</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono font-bold uppercase tracking-widest text-gray-500 mb-1">
+                  MICROPHONE:
+                </label>
+                <select
+                  value={params.micType}
+                  onChange={(e) => handleParamChange("micType", e.target.value as any)}
+                  className="w-full bg-[#0A0A0B] border border-[#222226] rounded-xl px-2.5 py-2 text-xs text-gray-100 font-mono focus:border-[#CCFF00] outline-none cursor-pointer"
+                >
+                  <option value="Shure SM57 Dynamic">Shure SM57 Dynamic (Aggressive Cut)</option>
+                  <option value="Royer R-121 Ribbon">Royer R-121 Ribbon (Warm Low End)</option>
+                  <option value="Sennheiser MD421">Sennheiser MD421 (Punchy Mids)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono font-bold uppercase tracking-widest text-gray-500 mb-1">
+                  MIC PLACEMENT:
+                </label>
+                <select
+                  value={params.micPlacement}
+                  onChange={(e) => handleParamChange("micPlacement", e.target.value as any)}
+                  className="w-full bg-[#0A0A0B] border border-[#222226] rounded-xl px-2.5 py-2 text-xs text-gray-100 font-mono focus:border-[#CCFF00] outline-none cursor-pointer"
+                >
+                  <option value="Center">Center (Bright / Direct)</option>
+                  <option value="Cap-Edge">Cap-Edge (Balanced Sweet Spot)</option>
+                  <option value="Cone">Cone (Dark / Thick Body)</option>
+                  <option value="Off-Axis">45° Off-Axis (Smooth Highs)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-[#222226] flex justify-center">
+            <Knob
+              label="ROOM AIR"
+              value={params.cabAir}
+              min={0}
+              max={10}
+              color="cyan"
+              size="md"
+              onChange={(v) => handleParamChange("cabAir", v)}
+            />
+          </div>
+        </div>
+
+        {/* POST-FX: 5-Band Metal Graphic EQ & Delay/Reverb */}
+        <div className="md:col-span-4 space-y-4">
+          {/* 5-Band Graphic EQ */}
+          <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-[#222226]">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    params.eqEnabled ? "bg-[#CCFF00] shadow-[0_0_8px_rgba(204,255,0,0.9)]" : "bg-gray-700"
+                  }`}
+                />
+                <h4 className="font-mono text-xs font-bold text-white uppercase tracking-wider">5-BAND GRAPHIC EQ</h4>
+              </div>
+              <button
+                onClick={() => handleParamChange("eqEnabled", !params.eqEnabled)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all border cursor-pointer ${
+                  params.eqEnabled
+                    ? "bg-[#CCFF00] text-black border-[#CCFF00]"
+                    : "bg-[#1D1D21] text-gray-400 border-[#333338]"
+                }`}
+              >
+                {params.eqEnabled ? "ACTIVE" : "BYPASS"}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-5 gap-1.5 mt-3">
+              <Knob
+                label="80Hz"
+                value={params.eq80Hz}
+                min={-10}
+                max={10}
+                color="lime"
+                size="sm"
+                onChange={(v) => handleParamChange("eq80Hz", v)}
+              />
+              <Knob
+                label="250Hz"
+                value={params.eq250Hz}
+                min={-10}
+                max={10}
+                color="yellow"
+                size="sm"
+                onChange={(v) => handleParamChange("eq250Hz", v)}
+              />
+              <Knob
+                label="750Hz"
+                value={params.eq750Hz}
+                min={-10}
+                max={10}
+                color="red"
+                size="sm"
+                onChange={(v) => handleParamChange("eq750Hz", v)}
+              />
+              <Knob
+                label="2.2kHz"
+                value={params.eq2200Hz}
+                min={-10}
+                max={10}
+                color="cyan"
+                size="sm"
+                onChange={(v) => handleParamChange("eq2200Hz", v)}
+              />
+              <Knob
+                label="6kHz"
+                value={params.eq6000Hz}
+                min={-10}
+                max={10}
+                color="purple"
+                size="sm"
+                onChange={(v) => handleParamChange("eq6000Hz", v)}
+              />
+            </div>
+          </div>
+
+          {/* Time-Based FX: Delay & Reverb */}
+          <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-[#222226]">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    params.delayEnabled || params.reverbEnabled
+                      ? "bg-[#CCFF00] shadow-[0_0_8px_rgba(204,255,0,0.9)]"
+                      : "bg-gray-700"
+                  }`}
+                />
+                <h4 className="font-mono text-xs font-bold text-white uppercase tracking-wider">DELAY & REVERB SPACE</h4>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-2 mt-3">
+              <Knob
+                label="DLY TIME"
+                value={params.delayTime}
+                min={50}
+                max={1000}
+                unit="ms"
+                color="cyan"
+                size="sm"
+                onChange={(v) => handleParamChange("delayTime", v)}
+              />
+              <Knob
+                label="DLY MIX"
+                value={params.delayMix}
+                min={0}
+                max={10}
+                color="cyan"
+                size="sm"
+                onChange={(v) => {
+                  handleParamChange("delayMix", v);
+                  handleParamChange("delayEnabled", v > 0);
+                }}
+              />
+              <Knob
+                label="REV DECAY"
+                value={params.reverbDecay}
+                min={0.5}
+                max={8}
+                unit="s"
+                color="purple"
+                size="sm"
+                onChange={(v) => handleParamChange("reverbDecay", v)}
+              />
+              <Knob
+                label="REV MIX"
+                value={params.reverbMix}
+                min={0}
+                max={10}
+                color="purple"
+                size="sm"
+                onChange={(v) => {
+                  handleParamChange("reverbMix", v);
+                  handleParamChange("reverbEnabled", v > 0);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Save Custom Preset Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#141416] border border-[#222226] rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <h3 className="text-base font-bold font-mono text-white flex items-center gap-2">
+              <Save className="w-5 h-5 text-[#CCFF00]" /> Save Custom Metal Rig Preset
+            </h3>
+            <p className="text-xs text-gray-400">
+              Save your dialed rig settings (amp head, overdrive, gate, IR, and EQ) to your local preset library.
+            </p>
+            <input
+              type="text"
+              value={customPresetName}
+              onChange={(e) => setCustomPresetName(e.target.value)}
+              placeholder="e.g. My Heavy 0-0-0 Destroyer"
+              className="w-full bg-[#0A0A0B] border border-[#222226] rounded-xl px-3 py-2 text-sm text-gray-100 font-mono focus:border-[#CCFF00] outline-none"
+            />
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="px-4 py-2 rounded-xl bg-[#1D1D21] text-gray-300 text-xs font-mono hover:bg-[#25252b] border border-[#333338] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveCustomPreset}
+                disabled={!customPresetName.trim()}
+                className="px-5 py-2 rounded-xl bg-[#CCFF00] hover:bg-[#b8e600] text-black font-bold text-xs font-mono disabled:opacity-50 cursor-pointer"
+              >
+                Save Preset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
