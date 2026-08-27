@@ -34,6 +34,9 @@ import {
   ChevronDown,
   ChevronUp,
   RefreshCw,
+  Gauge,
+  ShieldCheck,
+  Volume1,
 } from "lucide-react";
 
 export const AmpRigStudio: React.FC = () => {
@@ -278,6 +281,16 @@ export const AmpRigStudio: React.FC = () => {
     }
     if (pA.eqEnabled !== pB.eqEnabled) {
       diffs.push({ category: "Graphic EQ", paramName: "5-Band EQ", valA: pA.eqEnabled ? "ON" : "OFF", valB: pB.eqEnabled ? "ON" : "OFF" });
+    }
+    const trimA = pA.gainStageTrim !== undefined ? pA.gainStageTrim : 0;
+    const trimB = pB.gainStageTrim !== undefined ? pB.gainStageTrim : 0;
+    if (Math.abs(trimA - trimB) > 0.1) {
+      diffs.push({
+        category: "Gain Staging",
+        paramName: "Output Trim",
+        valA: `${trimA >= 0 ? "+" : ""}${trimA.toFixed(1)} dB`,
+        valB: `${trimB >= 0 ? "+" : ""}${trimB.toFixed(1)} dB`,
+      });
     }
 
     return diffs;
@@ -643,11 +656,11 @@ export const AmpRigStudio: React.FC = () => {
             </select>
           </div>
 
-          {/* VU Meters */}
+          {/* VU Meters & Output Level */}
           <div className="flex items-center gap-3 bg-[#0A0A0B] px-3 py-1.5 rounded-xl border border-[#222226]">
             <div className="flex items-center gap-1.5 text-[10px] font-mono">
               <span className="text-gray-500 uppercase font-bold">IN:</span>
-              <div className="w-16 h-2 bg-[#1D1D21] rounded-full overflow-hidden flex border border-[#333338]">
+              <div className="w-14 h-2 bg-[#1D1D21] rounded-full overflow-hidden flex border border-[#333338]">
                 <div
                   className="h-full bg-emerald-500 transition-all duration-75"
                   style={{ width: `${Math.min(100, levels.in * 100)}%` }}
@@ -657,10 +670,10 @@ export const AmpRigStudio: React.FC = () => {
 
             <div className="flex items-center gap-1.5 text-[10px] font-mono">
               <span className="text-gray-500 uppercase font-bold">OUT:</span>
-              <div className="w-16 h-2 bg-[#1D1D21] rounded-full overflow-hidden flex border border-[#333338]">
+              <div className="w-14 h-2 bg-[#1D1D21] rounded-full overflow-hidden flex border border-[#333338]">
                 <div
                   className={`h-full transition-all duration-75 ${
-                    levels.out > 0.85 ? "bg-red-500" : "bg-[#CCFF00]"
+                    levels.out > 0.88 ? "bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]" : "bg-[#CCFF00]"
                   }`}
                   style={{ width: `${Math.min(100, levels.out * 100)}%` }}
                 />
@@ -676,6 +689,46 @@ export const AmpRigStudio: React.FC = () => {
                 }`}
                 title={levels.gate ? "Gate Open" : "Gate Clamped"}
               />
+            </div>
+          </div>
+
+          {/* Preset Gain-Staging Normalizer & Clip-Prevention Slider */}
+          <div className="flex items-center gap-2.5 bg-[#0A0A0B] px-3 py-1.5 rounded-xl border border-[#222226] text-xs font-mono">
+            <div className="flex items-center gap-1.5 text-gray-300">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#CCFF00]" />
+              <div className="flex flex-col">
+                <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider leading-none">PRESET GAIN STAGING</span>
+                <span className="text-[10px] text-gray-300 font-bold leading-tight flex items-center gap-1">
+                  <span>Output Trim:</span>
+                  <span className={`font-mono font-bold ${
+                    (params.gainStageTrim || 0) > 0 ? "text-amber-400" : (params.gainStageTrim || 0) < 0 ? "text-sky-400" : "text-[#CCFF00]"
+                  }`}>
+                    {(params.gainStageTrim || 0) >= 0 ? "+" : ""}{(params.gainStageTrim || 0).toFixed(1)} dB
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                id="slider-gain-staging-trim"
+                type="range"
+                min="-12"
+                max="12"
+                step="0.5"
+                value={params.gainStageTrim !== undefined ? params.gainStageTrim : 0}
+                onChange={(e) => handleParamChange("gainStageTrim", parseFloat(e.target.value))}
+                className="w-24 sm:w-28 accent-[#CCFF00] h-1.5 bg-[#1D1D21] rounded-lg cursor-pointer"
+                title="Manually normalize output level for this preset to prevent live-switching clipping (-12dB to +12dB)"
+              />
+              <button
+                type="button"
+                onClick={() => handleParamChange("gainStageTrim", 0)}
+                className="px-1.5 py-0.5 rounded text-[9px] bg-[#1D1D21] hover:bg-[#25252b] text-gray-400 hover:text-white border border-[#333338] transition-colors cursor-pointer"
+                title="Reset Gain-Stage Trim to 0.0 dB"
+              >
+                0dB
+              </button>
             </div>
           </div>
         </div>
@@ -1459,6 +1512,53 @@ export const AmpRigStudio: React.FC = () => {
             size="lg"
             onChange={(v) => handleParamChange("master", v)}
           />
+        </div>
+
+        {/* Chassis Gain-Staging Normalizer Bar */}
+        <div className="mt-4 pt-3 border-t border-[#222226] flex flex-col sm:flex-row items-center justify-between gap-3 px-2">
+          <div className="flex items-center gap-2">
+            <Gauge className="w-4 h-4 text-[#CCFF00]" />
+            <div className="flex flex-col">
+              <span className="text-[11px] font-mono font-bold text-gray-200 uppercase tracking-wide">
+                PRESET GAIN-STAGING & LEVEL NORMALIZATION
+              </span>
+              <span className="text-[10px] font-mono text-gray-400">
+                Calibrates output volume before the studio limiter to eliminate clipping and jumps during live preset switching.
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 bg-[#0A0A0B] px-3.5 py-1.5 rounded-xl border border-[#222226] shrink-0">
+            <span className="text-[10px] font-mono font-bold text-gray-400">TRIM:</span>
+            <input
+              type="range"
+              min="-12"
+              max="12"
+              step="0.5"
+              value={params.gainStageTrim !== undefined ? params.gainStageTrim : 0}
+              onChange={(e) => handleParamChange("gainStageTrim", parseFloat(e.target.value))}
+              className="w-28 accent-[#CCFF00] h-1.5 bg-[#1D1D21] rounded-lg cursor-pointer"
+            />
+            <span
+              className={`font-mono text-xs font-bold min-w-[55px] text-right ${
+                (params.gainStageTrim || 0) > 0
+                  ? "text-amber-400"
+                  : (params.gainStageTrim || 0) < 0
+                  ? "text-sky-400"
+                  : "text-[#CCFF00]"
+              }`}
+            >
+              {(params.gainStageTrim || 0) >= 0 ? "+" : ""}
+              {(params.gainStageTrim || 0).toFixed(1)} dB
+            </span>
+            <button
+              type="button"
+              onClick={() => handleParamChange("gainStageTrim", 0)}
+              className="px-2 py-0.5 rounded text-[9.5px] font-mono font-bold bg-[#1D1D21] hover:bg-[#25252b] text-gray-300 hover:text-white border border-[#333338] transition-colors cursor-pointer"
+            >
+              Reset
+            </button>
+          </div>
         </div>
       </div>
 

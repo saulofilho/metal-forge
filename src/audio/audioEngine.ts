@@ -67,6 +67,7 @@ export class AudioEngine {
   private reverbWet: GainNode | null = null;
 
   // Master output
+  private gainStageTrimNode: GainNode | null = null;
   private masterGain: GainNode | null = null;
   private masterLimiter: DynamicsCompressorNode | null = null;
   public analyserNode: AnalyserNode | null = null;
@@ -361,7 +362,10 @@ export class AudioEngine {
     this.reverbDry.connect(reverbSum);
     this.reverbWet.connect(reverbSum);
 
-    // 10. Master Limiter & Analyser
+    // 10. Preset Gain-Staging Normalizer & Master Limiter & Analyser
+    this.gainStageTrimNode = ctx.createGain();
+    this.gainStageTrimNode.gain.value = 1.0;
+
     this.masterLimiter = ctx.createDynamicsCompressor();
     this.masterLimiter.threshold.value = -1.0;
     this.masterLimiter.knee.value = 3.0;
@@ -376,7 +380,8 @@ export class AudioEngine {
     this.analyserNode.fftSize = 512;
     this.analyserNode.smoothingTimeConstant = 0.8;
 
-    reverbSum.connect(this.masterLimiter);
+    reverbSum.connect(this.gainStageTrimNode);
+    this.gainStageTrimNode.connect(this.masterLimiter);
     this.masterLimiter.connect(this.masterGain);
     this.masterGain.connect(this.analyserNode);
     this.analyserNode.connect(ctx.destination);
@@ -530,6 +535,14 @@ export class AudioEngine {
       } else {
         this.reverbWet.gain.setValueAtTime(0, now);
       }
+    }
+
+    // Gain-Staging Output Normalization Trim (-12 dB to +12 dB)
+    if (this.gainStageTrimNode) {
+      const trimDb = p.gainStageTrim !== undefined ? p.gainStageTrim : 0;
+      // Convert dB to linear gain: 10^(dB/20)
+      const linearGain = Math.pow(10, trimDb / 20);
+      this.gainStageTrimNode.gain.setValueAtTime(Math.max(0, Math.min(4, linearGain)), now);
     }
   }
 

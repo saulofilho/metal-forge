@@ -112,6 +112,9 @@ export interface AmpParams {
   reverbType: "Catacomb Hall" | "Plate Metal" | "Dark Room" | "Shimmer Ambient";
   reverbDecay: number; // 0.5 to 10 s
   reverbMix: number; // 0 to 10
+
+  // Output Gain-Staging & Normalization Trim
+  gainStageTrim?: number; // -12 to +12 dB output trim for preset level matching (default 0 dB)
 }
 
 export type PresetCategory = "All" | "High-Gain" | "Clean" | "Experimental" | "Custom";
