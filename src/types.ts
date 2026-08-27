@@ -131,8 +131,15 @@ export interface AmpPreset {
   params: AmpParams;
 }
 
+export interface AbPresetSlot {
+  name: string;
+  presetId?: string;
+  params: AmpParams;
+  timestamp: number;
+}
+
 export interface MidiMapping {
-  action: "preset" | "toggle_drive" | "toggle_delay" | "toggle_mute" | "tap_tempo" | "daw_record" | "daw_play";
+  action: "preset" | "toggle_drive" | "toggle_delay" | "toggle_mute" | "tap_tempo" | "daw_record" | "daw_play" | "toggle_ab";
   targetPresetId?: string;
   messageType: "pc" | "cc" | "note";
   channel: number; // 0-15 (or -1 for any)

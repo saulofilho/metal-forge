@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { AudioEngine } from "../audio/audioEngine";
 import { FACTORY_PRESETS } from "../audio/presetLibrary";
-import { AmpParams, AmpPreset, PresetCategory, PresetUsageStat } from "../types";
+import { AmpParams, AmpPreset, PresetCategory, PresetUsageStat, AbPresetSlot } from "../types";
 import { Knob } from "./Knob";
 import { SpectralAnalyzer } from "./SpectralAnalyzer";
 import {
@@ -26,6 +26,14 @@ import {
   Clock,
   Activity,
   TrendingUp,
+  ArrowLeftRight,
+  Copy,
+  RotateCcw,
+  Check,
+  GitCompare,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
 } from "lucide-react";
 
 export const AmpRigStudio: React.FC = () => {
@@ -49,6 +57,32 @@ export const AmpRigStudio: React.FC = () => {
   const [inputBuffer, setInputBuffer] = useState<number>(256);
   const [customPresetName, setCustomPresetName] = useState("");
   const [showSaveModal, setShowSaveModal] = useState(false);
+
+  // A/B Preset Tone Comparison State Buffers
+  const [abActiveSlot, setAbActiveSlot] = useState<"A" | "B">("A");
+  const [slotA, setSlotA] = useState<AbPresetSlot>(() => ({
+    name: FACTORY_PRESETS[0].name,
+    presetId: FACTORY_PRESETS[0].id,
+    params: { ...FACTORY_PRESETS[0].params },
+    timestamp: Date.now(),
+  }));
+  const [slotB, setSlotB] = useState<AbPresetSlot>(() => ({
+    name: (FACTORY_PRESETS[1] || FACTORY_PRESETS[0]).name,
+    presetId: (FACTORY_PRESETS[1] || FACTORY_PRESETS[0]).id,
+    params: { ...(FACTORY_PRESETS[1]?.params || FACTORY_PRESETS[0].params) },
+    timestamp: Date.now(),
+  }));
+  const [showDiffDrawer, setShowDiffDrawer] = useState(false);
+  const [abToastMessage, setAbToastMessage] = useState<string | null>(null);
+  const abToastTimerRef = useRef<number | null>(null);
+
+  const showAbToast = (msg: string) => {
+    if (abToastTimerRef.current) clearTimeout(abToastTimerRef.current);
+    setAbToastMessage(msg);
+    abToastTimerRef.current = window.setTimeout(() => {
+      setAbToastMessage(null);
+    }, 2800);
+  };
 
   // Preset Usage Insights State (Times Played + Last Used Timestamp)
   const [usageStats, setUsageStats] = useState<Record<string, PresetUsageStat>>(() => {
@@ -177,6 +211,78 @@ export const AmpRigStudio: React.FC = () => {
     return counts;
   }, [presets]);
 
+  // Detailed parameter differences between Slot A and Slot B
+  const parameterDifferences = useMemo(() => {
+    const diffs: { category: string; paramName: string; valA: string; valB: string }[] = [];
+    const pA = slotA.params;
+    const pB = slotB.params;
+
+    if (pA.ampModel !== pB.ampModel) {
+      diffs.push({ category: "Amp Head", paramName: "Model", valA: pA.ampModel, valB: pB.ampModel });
+    }
+    if (Math.abs(pA.gain - pB.gain) > 0.05) {
+      diffs.push({ category: "Amp Head", paramName: "Gain", valA: pA.gain.toFixed(1), valB: pB.gain.toFixed(1) });
+    }
+    if (Math.abs(pA.master - pB.master) > 0.05) {
+      diffs.push({ category: "Amp Head", paramName: "Master", valA: pA.master.toFixed(1), valB: pB.master.toFixed(1) });
+    }
+    if (Math.abs(pA.bass - pB.bass) > 0.05) {
+      diffs.push({ category: "EQ", paramName: "Bass", valA: pA.bass.toFixed(1), valB: pB.bass.toFixed(1) });
+    }
+    if (Math.abs(pA.middle - pB.middle) > 0.05) {
+      diffs.push({ category: "EQ", paramName: "Middle", valA: pA.middle.toFixed(1), valB: pB.middle.toFixed(1) });
+    }
+    if (Math.abs(pA.treble - pB.treble) > 0.05) {
+      diffs.push({ category: "EQ", paramName: "Treble", valA: pA.treble.toFixed(1), valB: pB.treble.toFixed(1) });
+    }
+    if (Math.abs(pA.presence - pB.presence) > 0.05) {
+      diffs.push({ category: "Power Stage", paramName: "Presence", valA: pA.presence.toFixed(1), valB: pB.presence.toFixed(1) });
+    }
+    if (Math.abs(pA.resonance - pB.resonance) > 0.05) {
+      diffs.push({ category: "Power Stage", paramName: "Resonance", valA: pA.resonance.toFixed(1), valB: pB.resonance.toFixed(1) });
+    }
+    if (pA.cabModel !== pB.cabModel) {
+      diffs.push({ category: "Cabinet IR", paramName: "Cab Model", valA: pA.cabModel, valB: pB.cabModel });
+    }
+    if (pA.micType !== pB.micType) {
+      diffs.push({ category: "Cabinet IR", paramName: "Microphone", valA: pA.micType, valB: pB.micType });
+    }
+    if (pA.micPlacement !== pB.micPlacement) {
+      diffs.push({ category: "Cabinet IR", paramName: "Placement", valA: pA.micPlacement, valB: pB.micPlacement });
+    }
+    if (pA.driveEnabled !== pB.driveEnabled) {
+      diffs.push({ category: "Overdrive", paramName: "TS9 Power", valA: pA.driveEnabled ? "ON" : "OFF", valB: pB.driveEnabled ? "ON" : "OFF" });
+    }
+    if (pA.driveEnabled && pB.driveEnabled) {
+      if (Math.abs(pA.driveGain - pB.driveGain) > 0.05) {
+        diffs.push({ category: "Overdrive", paramName: "Drive Gain", valA: pA.driveGain.toFixed(1), valB: pB.driveGain.toFixed(1) });
+      }
+      if (Math.abs(pA.driveLevel - pB.driveLevel) > 0.05) {
+        diffs.push({ category: "Overdrive", paramName: "Drive Level", valA: pA.driveLevel.toFixed(1), valB: pB.driveLevel.toFixed(1) });
+      }
+    }
+    if (pA.gateEnabled !== pB.gateEnabled) {
+      diffs.push({ category: "Noise Gate", paramName: "Gate Power", valA: pA.gateEnabled ? "ON" : "OFF", valB: pB.gateEnabled ? "ON" : "OFF" });
+    }
+    if (pA.gateThreshold !== pB.gateThreshold) {
+      diffs.push({ category: "Noise Gate", paramName: "Threshold", valA: `${pA.gateThreshold}dB`, valB: `${pB.gateThreshold}dB` });
+    }
+    if (pA.delayEnabled !== pB.delayEnabled) {
+      diffs.push({ category: "Delay", paramName: "Delay Power", valA: pA.delayEnabled ? "ON" : "OFF", valB: pB.delayEnabled ? "ON" : "OFF" });
+    }
+    if (pA.reverbEnabled !== pB.reverbEnabled) {
+      diffs.push({ category: "Reverb", paramName: "Reverb Power", valA: pA.reverbEnabled ? "ON" : "OFF", valB: pB.reverbEnabled ? "ON" : "OFF" });
+    }
+    if (pA.chorusEnabled !== pB.chorusEnabled) {
+      diffs.push({ category: "Chorus", paramName: "Chorus Power", valA: pA.chorusEnabled ? "ON" : "OFF", valB: pB.chorusEnabled ? "ON" : "OFF" });
+    }
+    if (pA.eqEnabled !== pB.eqEnabled) {
+      diffs.push({ category: "Graphic EQ", paramName: "5-Band EQ", valA: pA.eqEnabled ? "ON" : "OFF", valB: pB.eqEnabled ? "ON" : "OFF" });
+    }
+
+    return diffs;
+  }, [slotA, slotB]);
+
   useEffect(() => {
     audioEngine.init().then(() => {
       audioEngine.applyAmpParams(params);
@@ -194,13 +300,102 @@ export const AmpRigStudio: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
+  // Keyboard shortcut listener for instantaneous A/B toggling
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement)?.tagName)) {
+        return;
+      }
+      if (e.key === "a" || e.key === "A") {
+        if (e.shiftKey) {
+          handleSwitchSlot("A");
+        }
+      } else if (e.key === "b" || e.key === "B") {
+        if (e.shiftKey) {
+          handleSwitchSlot("B");
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [slotA, slotB, abActiveSlot]);
+
+  // Switch between Slot A and Slot B
+  const handleSwitchSlot = (targetSlot: "A" | "B") => {
+    const targetData = targetSlot === "A" ? slotA : slotB;
+    setAbActiveSlot(targetSlot);
+    setParams(targetData.params);
+    setCurrentPresetId(targetData.presetId || "");
+    activeParamsRef.current = targetData.params;
+    audioEngine.applyAmpParams(targetData.params);
+    showAbToast(`Active: Slot [${targetSlot}] • ${targetData.name}`);
+  };
+
+  // Toggle A/B back and forth
+  const handleToggleAB = () => {
+    const nextSlot = abActiveSlot === "A" ? "B" : "A";
+    handleSwitchSlot(nextSlot);
+  };
+
+  // Copy one slot to the other
+  const handleCopySlot = (source: "A" | "B") => {
+    if (source === "A") {
+      setSlotB({
+        name: `${slotA.name} (Snapshot)`,
+        presetId: slotA.presetId,
+        params: { ...slotA.params },
+        timestamp: Date.now(),
+      });
+      showAbToast(`Copied Slot A settings into Slot B as reference baseline!`);
+    } else {
+      setSlotA({
+        name: `${slotB.name} (Snapshot)`,
+        presetId: slotB.presetId,
+        params: { ...slotB.params },
+        timestamp: Date.now(),
+      });
+      showAbToast(`Copied Slot B settings into Slot A as reference baseline!`);
+    }
+  };
+
+  // Swap Slot A and Slot B
+  const handleSwapSlots = () => {
+    const prevA = { ...slotA };
+    const prevB = { ...slotB };
+    setSlotA(prevB);
+    setSlotB(prevA);
+    const activeData = abActiveSlot === "A" ? prevB : prevA;
+    setParams(activeData.params);
+    setCurrentPresetId(activeData.presetId || "");
+    activeParamsRef.current = activeData.params;
+    audioEngine.applyAmpParams(activeData.params);
+    showAbToast(`Swapped Slot A ⇄ Slot B!`);
+  };
+
+  // Handle parameter tweaking
   const handleParamChange = <K extends keyof AmpParams>(key: K, value: AmpParams[K]) => {
     const updated = { ...params, [key]: value };
     setParams(updated);
     activeParamsRef.current = updated;
     audioEngine.applyAmpParams(updated);
+
+    // Sync with active comparison slot
+    if (abActiveSlot === "A") {
+      setSlotA((prev) => ({
+        ...prev,
+        params: updated,
+        timestamp: Date.now(),
+      }));
+    } else {
+      setSlotB((prev) => ({
+        ...prev,
+        params: updated,
+        timestamp: Date.now(),
+      }));
+    }
   };
 
+  // Select preset from library into active slot
   const handleSelectPreset = (preset: AmpPreset) => {
     if (hoverTimerRef.current) {
       clearTimeout(hoverTimerRef.current);
@@ -213,6 +408,51 @@ export const AmpRigStudio: React.FC = () => {
     activeParamsRef.current = preset.params;
     audioEngine.applyAmpParams(preset.params);
     recordPresetUsage(preset.id);
+
+    const slotPayload: AbPresetSlot = {
+      name: preset.name,
+      presetId: preset.id,
+      params: { ...preset.params },
+      timestamp: Date.now(),
+    };
+
+    if (abActiveSlot === "A") {
+      setSlotA(slotPayload);
+    } else {
+      setSlotB(slotPayload);
+    }
+    showAbToast(`Loaded "${preset.name}" into Slot ${abActiveSlot}`);
+  };
+
+  // Load preset directly into designated slot
+  const handleLoadPresetToSlot = (e: React.MouseEvent, preset: AmpPreset, targetSlot: "A" | "B") => {
+    e.stopPropagation();
+    const slotPayload: AbPresetSlot = {
+      name: preset.name,
+      presetId: preset.id,
+      params: { ...preset.params },
+      timestamp: Date.now(),
+    };
+
+    if (targetSlot === "A") {
+      setSlotA(slotPayload);
+      if (abActiveSlot === "A") {
+        setParams(preset.params);
+        setCurrentPresetId(preset.id);
+        activeParamsRef.current = preset.params;
+        audioEngine.applyAmpParams(preset.params);
+      }
+    } else {
+      setSlotB(slotPayload);
+      if (abActiveSlot === "B") {
+        setParams(preset.params);
+        setCurrentPresetId(preset.id);
+        activeParamsRef.current = preset.params;
+        audioEngine.applyAmpParams(preset.params);
+      }
+    }
+    recordPresetUsage(preset.id);
+    showAbToast(`Assigned "${preset.name}" to Slot ${targetSlot}`);
   };
 
   const handlePresetMouseEnter = (preset: AmpPreset) => {
@@ -472,6 +712,248 @@ export const AmpRigStudio: React.FC = () => {
         </div>
       </div>
 
+      {/* A/B Dual-Slot Tone Comparison Control Bar */}
+      <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 sm:p-5 shadow-2xl space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-[#222226]">
+          <div className="flex items-center gap-2">
+            <ArrowLeftRight className="w-4 h-4 text-[#CCFF00]" />
+            <h3 className="text-xs sm:text-sm font-bold text-white font-mono uppercase tracking-widest flex items-center gap-2">
+              <span>A/B TONAL COMPARISON ENGINE</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-[#1D1D21] text-gray-400 font-normal border border-[#333338]">
+                Instant Auditioning
+              </span>
+            </h3>
+          </div>
+
+          {/* Quick A/B Action Utilities */}
+          <div className="flex items-center flex-wrap gap-2 text-xs font-mono">
+            <button
+              onClick={() => handleCopySlot("A")}
+              className="px-2.5 py-1 rounded-lg bg-[#1D1D21] hover:bg-[#25252b] text-gray-300 border border-[#333338] flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Copy active settings in Slot A into Slot B as a baseline"
+            >
+              <Copy className="w-3 h-3 text-[#CCFF00]" />
+              <span>Copy A → B</span>
+            </button>
+
+            <button
+              onClick={() => handleCopySlot("B")}
+              className="px-2.5 py-1 rounded-lg bg-[#1D1D21] hover:bg-[#25252b] text-gray-300 border border-[#333338] flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Copy active settings in Slot B into Slot A as a baseline"
+            >
+              <Copy className="w-3 h-3 text-[#CCFF00]" />
+              <span>Copy B → A</span>
+            </button>
+
+            <button
+              onClick={handleSwapSlots}
+              className="px-2.5 py-1 rounded-lg bg-[#1D1D21] hover:bg-[#25252b] text-gray-300 border border-[#333338] flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Swap Slot A and Slot B settings"
+            >
+              <RefreshCw className="w-3 h-3 text-[#CCFF00]" />
+              <span>Swap A ⇄ B</span>
+            </button>
+
+            {/* Difference Inspector Button */}
+            <button
+              onClick={() => setShowDiffDrawer(!showDiffDrawer)}
+              className={`px-3 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                parameterDifferences.length > 0
+                  ? "bg-[#CCFF00]/10 text-[#CCFF00] border-[#CCFF00]/40 hover:bg-[#CCFF00]/20"
+                  : "bg-[#1D1D21] text-gray-400 border-[#333338]"
+              }`}
+            >
+              <GitCompare className="w-3 h-3" />
+              <span>
+                {parameterDifferences.length === 0
+                  ? "Tones Identical"
+                  : `${parameterDifferences.length} ${parameterDifferences.length === 1 ? "Diff" : "Diffs"}`}
+              </span>
+              {showDiffDrawer ? <ChevronUp className="w-3 h-3 ml-0.5" /> : <ChevronDown className="w-3 h-3 ml-0.5" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Main A / B Selector Buttons Row */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+          {/* Slot A Card */}
+          <div
+            onClick={() => handleSwitchSlot("A")}
+            className={`col-span-1 md:col-span-5 p-3 sm:p-3.5 rounded-xl border transition-all cursor-pointer select-none relative ${
+              abActiveSlot === "A"
+                ? "bg-[#1a1c13] border-[#CCFF00] shadow-[0_0_15px_rgba(204,255,0,0.25)] ring-1 ring-[#CCFF00]"
+                : "bg-[#0A0A0B] border-[#222226] hover:border-[#38383f] opacity-75 hover:opacity-100"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span
+                  className={`w-7 h-7 rounded-lg font-mono font-black text-sm flex items-center justify-center border ${
+                    abActiveSlot === "A"
+                      ? "bg-[#CCFF00] text-black border-[#CCFF00] shadow-[0_0_10px_rgba(204,255,0,0.4)]"
+                      : "bg-[#1D1D21] text-gray-400 border-[#333338]"
+                  }`}
+                >
+                  A
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-white tracking-wide truncate max-w-[150px] sm:max-w-[190px]">
+                      {slotA.name}
+                    </span>
+                    {abActiveSlot === "A" && (
+                      <span className="px-1.5 py-0.2 rounded bg-[#CCFF00] text-black font-mono text-[9px] font-black uppercase">
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-gray-400 font-mono mt-0.5 truncate">
+                    {slotA.params.ampModel} • Gain {slotA.params.gain.toFixed(1)} • {slotA.params.cabModel.split(" ")[0]}
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <span className="text-[9px] font-mono text-gray-500 block">Shift+A</span>
+                <span className={`text-[10px] font-mono font-bold ${slotA.params.driveEnabled ? "text-[#CCFF00]" : "text-gray-500"}`}>
+                  {slotA.params.driveEnabled ? "TS9 ON" : "TS9 OFF"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Center A/B Toggle Master Button */}
+          <div className="col-span-1 md:col-span-2 flex flex-col items-center justify-center">
+            <button
+              id="btn-ab-toggle"
+              onClick={handleToggleAB}
+              className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#1E1E22] via-[#282830] to-[#1E1E22] hover:from-[#25252a] hover:to-[#25252a] text-white border border-[#3A3A42] hover:border-[#CCFF00] transition-all shadow-xl flex items-center justify-center gap-2 group cursor-pointer"
+              title="Instantly toggle between Tone Slot A and Tone Slot B (Shortcut: Shift+A or Shift+B)"
+            >
+              <span
+                className={`font-mono font-black text-xs px-2 py-0.5 rounded transition-all ${
+                  abActiveSlot === "A"
+                    ? "bg-[#CCFF00] text-black shadow-[0_0_8px_rgba(204,255,0,0.5)] scale-105"
+                    : "bg-[#141416] text-gray-400"
+                }`}
+              >
+                A
+              </span>
+              <ArrowLeftRight className="w-3.5 h-3.5 text-[#CCFF00] group-hover:rotate-180 transition-transform duration-300" />
+              <span
+                className={`font-mono font-black text-xs px-2 py-0.5 rounded transition-all ${
+                  abActiveSlot === "B"
+                    ? "bg-[#CCFF00] text-black shadow-[0_0_8px_rgba(204,255,0,0.5)] scale-105"
+                    : "bg-[#141416] text-gray-400"
+                }`}
+              >
+                B
+              </span>
+            </button>
+            <span className="text-[9px] font-mono text-gray-500 mt-1 uppercase tracking-widest">
+              Shift+A / Shift+B
+            </span>
+          </div>
+
+          {/* Slot B Card */}
+          <div
+            onClick={() => handleSwitchSlot("B")}
+            className={`col-span-1 md:col-span-5 p-3 sm:p-3.5 rounded-xl border transition-all cursor-pointer select-none relative ${
+              abActiveSlot === "B"
+                ? "bg-[#1a1c13] border-[#CCFF00] shadow-[0_0_15px_rgba(204,255,0,0.25)] ring-1 ring-[#CCFF00]"
+                : "bg-[#0A0A0B] border-[#222226] hover:border-[#38383f] opacity-75 hover:opacity-100"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span
+                  className={`w-7 h-7 rounded-lg font-mono font-black text-sm flex items-center justify-center border ${
+                    abActiveSlot === "B"
+                      ? "bg-[#CCFF00] text-black border-[#CCFF00] shadow-[0_0_10px_rgba(204,255,0,0.4)]"
+                      : "bg-[#1D1D21] text-gray-400 border-[#333338]"
+                  }`}
+                >
+                  B
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-white tracking-wide truncate max-w-[150px] sm:max-w-[190px]">
+                      {slotB.name}
+                    </span>
+                    {abActiveSlot === "B" && (
+                      <span className="px-1.5 py-0.2 rounded bg-[#CCFF00] text-black font-mono text-[9px] font-black uppercase">
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-gray-400 font-mono mt-0.5 truncate">
+                    {slotB.params.ampModel} • Gain {slotB.params.gain.toFixed(1)} • {slotB.params.cabModel.split(" ")[0]}
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <span className="text-[9px] font-mono text-gray-500 block">Shift+B</span>
+                <span className={`text-[10px] font-mono font-bold ${slotB.params.driveEnabled ? "text-[#CCFF00]" : "text-gray-500"}`}>
+                  {slotB.params.driveEnabled ? "TS9 ON" : "TS9 OFF"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Parameter Differences Drawer */}
+        {showDiffDrawer && (
+          <div className="mt-3 pt-3 border-t border-[#222226] bg-[#0A0A0B] p-3.5 rounded-xl border border-[#222226]">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-mono font-bold text-gray-300 flex items-center gap-1.5">
+                <GitCompare className="w-3.5 h-3.5 text-[#CCFF00]" />
+                <span>SIDE-BY-SIDE PARAMETER DIFFERENCES ({parameterDifferences.length})</span>
+              </span>
+              <button
+                onClick={() => setShowDiffDrawer(false)}
+                className="text-xs font-mono text-gray-500 hover:text-white cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+
+            {parameterDifferences.length > 0 ? (
+              <div className="overflow-x-auto max-h-52 scrollbar-thin">
+                <table className="w-full text-left font-mono text-[11px]">
+                  <thead>
+                    <tr className="border-b border-[#222226] text-gray-500 text-[10px]">
+                      <th className="pb-1.5 font-bold uppercase">Section</th>
+                      <th className="pb-1.5 font-bold uppercase">Parameter</th>
+                      <th className={`pb-1.5 font-bold uppercase ${abActiveSlot === "A" ? "text-[#CCFF00]" : ""}`}>Slot A</th>
+                      <th className={`pb-1.5 font-bold uppercase ${abActiveSlot === "B" ? "text-[#CCFF00]" : ""}`}>Slot B</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#1D1D21]">
+                    {parameterDifferences.map((d, i) => (
+                      <tr key={i} className="hover:bg-[#141416]/50">
+                        <td className="py-1 text-gray-400 text-[10px]">{d.category}</td>
+                        <td className="py-1 text-gray-200 font-semibold">{d.paramName}</td>
+                        <td className={`py-1 ${abActiveSlot === "A" ? "text-[#CCFF00] font-bold" : "text-gray-300"}`}>
+                          {d.valA}
+                        </td>
+                        <td className={`py-1 ${abActiveSlot === "B" ? "text-[#CCFF00] font-bold" : "text-gray-300"}`}>
+                          {d.valB}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-xs font-mono text-gray-500 text-center py-2">
+                Slot A and Slot B parameters are currently identical. Tweak any knob or pedal to compare differences!
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Preset Selector Bento Grid with Categorical Filtering */}
       <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
         {/* Preset Header & Actions */}
@@ -677,6 +1159,34 @@ export const AmpRigStudio: React.FC = () => {
 
                       {/* Audition Button & Visual Equalizer Indicator */}
                       <div className="flex items-center gap-1.5">
+                        {/* Quick Slot Assign Buttons */}
+                        <div className="flex items-center gap-0.5 bg-[#141416] p-0.5 rounded-lg border border-[#2b2b30]">
+                          <button
+                            type="button"
+                            onClick={(e) => handleLoadPresetToSlot(e, preset, "A")}
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-all cursor-pointer ${
+                              slotA.presetId === preset.id
+                                ? "bg-[#CCFF00] text-black font-black shadow-[0_0_6px_rgba(204,255,0,0.5)]"
+                                : "text-gray-400 hover:text-white"
+                            }`}
+                            title={`Assign to Slot A (currently: ${slotA.name})`}
+                          >
+                            A
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleLoadPresetToSlot(e, preset, "B")}
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-all cursor-pointer ${
+                              slotB.presetId === preset.id
+                                ? "bg-[#CCFF00] text-black font-black shadow-[0_0_6px_rgba(204,255,0,0.5)]"
+                                : "text-gray-400 hover:text-white"
+                            }`}
+                            title={`Assign to Slot B (currently: ${slotB.name})`}
+                          >
+                            B
+                          </button>
+                        </div>
+
                         {isAuditioning && (
                           <div className="flex items-end gap-0.5 h-3.5 py-0.5">
                             <span className="w-0.5 bg-[#CCFF00] rounded-full h-full animate-bounce" />
@@ -803,6 +1313,30 @@ export const AmpRigStudio: React.FC = () => {
                 <span className="px-2 py-0.5 rounded bg-[#1D1D21] text-[#CCFF00] font-mono text-[10px] font-bold border border-[#333338]">
                   TUBE STAGE
                 </span>
+                {/* Tactical Chassis A/B Switch */}
+                <div className="flex items-center gap-1 bg-[#0A0A0B] p-0.5 rounded-lg border border-[#333338] ml-2">
+                  <span className="text-[9px] font-mono text-gray-500 font-bold px-1 uppercase">A/B:</span>
+                  <button
+                    onClick={() => handleSwitchSlot("A")}
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-black transition-all cursor-pointer ${
+                      abActiveSlot === "A"
+                        ? "bg-[#CCFF00] text-black shadow-[0_0_8px_rgba(204,255,0,0.5)]"
+                        : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    A
+                  </button>
+                  <button
+                    onClick={() => handleSwitchSlot("B")}
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-black transition-all cursor-pointer ${
+                      abActiveSlot === "B"
+                        ? "bg-[#CCFF00] text-black shadow-[0_0_8px_rgba(204,255,0,0.5)]"
+                        : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    B
+                  </button>
+                </div>
               </div>
               <p className="text-xs text-gray-400 font-mono mt-0.5">
                 Class A/B Push-Pull Tube Power Stage • Drop C Low Frequency Tuned
@@ -1315,6 +1849,13 @@ export const AmpRigStudio: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {/* Floating A/B Switch Toast */}
+      {abToastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#141416] border border-[#CCFF00] text-white px-4 py-2.5 rounded-xl shadow-[0_0_20px_rgba(204,255,0,0.3)] font-mono text-xs flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <Zap className="w-4 h-4 text-[#CCFF00] shrink-0" />
+          <span>{abToastMessage}</span>
         </div>
       )}
     </div>
