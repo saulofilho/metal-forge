@@ -198,6 +198,65 @@ export type DrumBeatPattern =
   | "Slow Sludge Doom (60 BPM)"
   | "None / Click Only";
 
+export interface ScrapedSongSection {
+  name: string;
+  chords: string[];
+  lyricsSnippet?: string;
+  rawTab?: string;
+}
+
+export interface ScrapedSongResult {
+  url: string;
+  songTitle: string;
+  artist: string;
+  originalKey: string;
+  originalBpm: number;
+  source: string;
+  rawChords: string;
+  sections: ScrapedSongSection[];
+  transposedDropC?: TransposedSongData;
+}
+
+export interface ChordTransformItem {
+  originalChord: string;
+  metalDropCChord: string;
+  fretNotation: string;
+  functionDescription: string;
+}
+
+export interface StyleConvertedSection {
+  name: string;
+  originalChords: string;
+  metalChords: string;
+  technique: string;
+  tab: string;
+  drumFeel: string;
+  audioVoicings?: { frets: (number | "x")[]; pm: boolean; dur: number }[];
+}
+
+export interface StyleConversionResult {
+  originalTitle: string;
+  originalArtist: string;
+  originalGenre: string;
+  targetMetalSubgenre: MetalSubgenre;
+  originalBpm: number;
+  metalBpm: number;
+  originalKey: string;
+  metalKey: string;
+  transformationNotes: string;
+  chordTransformations: ChordTransformItem[];
+  sections: StyleConvertedSection[];
+  recommendedRig: {
+    presetId: string;
+    name: string;
+    ampModel: string;
+    distortionTip: string;
+    pedals: string[];
+  };
+  breakdownPattern?: string;
+  fretboardTips: string[];
+}
+
 export interface TunerResult {
   frequency: number;
   note: string;

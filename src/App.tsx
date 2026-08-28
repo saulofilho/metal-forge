@@ -70,7 +70,17 @@ export default function App() {
 
       {/* Main Bento Studio Viewport */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 pb-20">
-        {currentTab === "transposer" && <TransposerStudio />}
+        {currentTab === "transposer" && (
+          <TransposerStudio
+            onNavigateToAmp={() => setCurrentTab("amp-rig")}
+            onLoadAmpPreset={(presetId) => {
+              const preset = FACTORY_PRESETS.find((p) => p.id === presetId);
+              if (preset) {
+                audioEngine.applyAmpParams(preset.params);
+              }
+            }}
+          />
+        )}
         {currentTab === "amp-rig" && <AmpRigStudio />}
         {currentTab === "live-hud" && (
           <LivePerformanceHUD onOpenMidiSettings={() => setIsMidiModalOpen(true)} />

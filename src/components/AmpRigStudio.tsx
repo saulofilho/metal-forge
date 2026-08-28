@@ -681,9 +681,18 @@ export const AmpRigStudio: React.FC = () => {
   };
 
   return (
-    <div id="amp-rig-studio" className="space-y-6">
+    <motion.div
+      id="amp-rig-studio"
+      className="space-y-6"
+      variants={bentoContainerVariants}
+      initial="hidden"
+      animate="visible"
+    >
       {/* Top Controls & Live Input Bento Bar */}
-      <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 sm:p-5 shadow-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <motion.div
+        variants={bentoSectionVariants}
+        className="bg-[#141416] border border-[#222226] rounded-2xl p-4 sm:p-5 shadow-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+      >
         {/* Live Input Setup */}
         <div className="flex flex-wrap items-center gap-3">
           <button
@@ -828,10 +837,13 @@ export const AmpRigStudio: React.FC = () => {
             <Play className="w-2.5 h-2.5 fill-current" /> Slam Breakdown
           </button>
         </div>
-      </div>
+      </motion.div>
 
       {/* A/B Dual-Slot Tone Comparison Control Bar */}
-      <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 sm:p-5 shadow-2xl space-y-3">
+      <motion.div
+        variants={bentoSectionVariants}
+        className="bg-[#141416] border border-[#222226] rounded-2xl p-4 sm:p-5 shadow-2xl space-y-3"
+      >
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-[#222226]">
           <div className="flex items-center gap-2">
             <ArrowLeftRight className="w-4 h-4 text-[#CCFF00]" />
@@ -1070,10 +1082,13 @@ export const AmpRigStudio: React.FC = () => {
             )}
           </div>
         )}
-      </div>
+      </motion.div>
 
       {/* Preset Selector Bento Grid with Categorical Filtering */}
-      <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
+      <motion.div
+        variants={bentoSectionVariants}
+        className="bg-[#141416] border border-[#222226] rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4"
+      >
         {/* Preset Header & Actions */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#222226]">
           <div className="flex items-center gap-2">
@@ -1230,187 +1245,210 @@ export const AmpRigStudio: React.FC = () => {
           </div>
         </div>
 
-        {/* Preset Cards Grid (Filtered) */}
-        {filteredPresets.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
-            {filteredPresets.map((preset) => {
-              const isSelected = currentPresetId === preset.id;
-              const isAuditioning = auditioningPresetId === preset.id;
-              const cat = preset.category || (preset.id.startsWith("custom-") ? "Custom" : "High-Gain");
-              const usage = usageStats[preset.id] || { count: 0, lastUsed: 0 };
-              return (
-                <div
-                  key={preset.id}
-                  id={`preset-card-${preset.id}`}
-                  onMouseEnter={() => handlePresetMouseEnter(preset)}
-                  onMouseLeave={() => handlePresetMouseLeave(preset)}
-                  onClick={() => handleSelectPreset(preset)}
-                  className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer group select-none ${
-                    isAuditioning
-                      ? "bg-[#1F1F24] border-[#CCFF00] shadow-[0_0_20px_rgba(204,255,0,0.35)] ring-2 ring-[#CCFF00]"
-                      : isSelected
-                      ? "bg-[#1D1D21] border-[#CCFF00] shadow-[0_0_15px_rgba(204,255,0,0.25)] ring-1 ring-[#CCFF00]"
-                      : "bg-[#0A0A0B] border-[#222226] hover:border-[#44444c] hover:bg-[#141416]"
-                  }`}
-                >
-                  <div>
-                    {/* Top Row: Category Tag, Genre, Audition Equalizer / Button */}
-                    <div className="flex items-center justify-between gap-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span
-                          className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold ${
-                            isAuditioning || isSelected
-                              ? "bg-[#CCFF00] text-black"
-                              : cat === "Clean"
-                              ? "bg-sky-950/80 text-sky-400 border border-sky-800/40"
-                              : cat === "Experimental"
-                              ? "bg-purple-950/80 text-purple-400 border border-purple-800/40"
-                              : "bg-[#141416] text-gray-400 border border-[#333338]"
-                          }`}
-                        >
-                          {cat}
-                        </span>
-                        <span className="text-[9px] font-mono text-gray-500 truncate max-w-[85px]">
-                          {preset.subgenre}
-                        </span>
-                      </div>
-
-                      {/* Audition Button & Visual Equalizer Indicator */}
-                      <div className="flex items-center gap-1.5">
-                        {/* Quick Slot Assign Buttons */}
-                        <div className="flex items-center gap-0.5 bg-[#141416] p-0.5 rounded-lg border border-[#2b2b30]">
-                          <button
-                            type="button"
-                            onClick={(e) => handleLoadPresetToSlot(e, preset, "A")}
-                            className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-all cursor-pointer ${
-                              slotA.presetId === preset.id
-                                ? "bg-[#CCFF00] text-black font-black shadow-[0_0_6px_rgba(204,255,0,0.5)]"
-                                : "text-gray-400 hover:text-white"
+        {/* Preset Cards Grid (Filtered with Staggered Motion & Key Transition) */}
+        <AnimatePresence mode="wait">
+          {filteredPresets.length > 0 ? (
+            <motion.div
+              key={`presets-${selectedCategory}-${sortBy}-${searchQuery ? "filtered" : "all"}`}
+              variants={presetGridVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5"
+            >
+              {filteredPresets.map((preset) => {
+                const isSelected = currentPresetId === preset.id;
+                const isAuditioning = auditioningPresetId === preset.id;
+                const cat = preset.category || (preset.id.startsWith("custom-") ? "Custom" : "High-Gain");
+                const usage = usageStats[preset.id] || { count: 0, lastUsed: 0 };
+                return (
+                  <motion.div
+                    key={preset.id}
+                    variants={presetCardVariants}
+                    layout
+                    id={`preset-card-${preset.id}`}
+                    onMouseEnter={() => handlePresetMouseEnter(preset)}
+                    onMouseLeave={() => handlePresetMouseLeave(preset)}
+                    onClick={() => handleSelectPreset(preset)}
+                    className={`p-3 rounded-xl border text-left transition-colors relative overflow-hidden flex flex-col justify-between cursor-pointer group select-none ${
+                      isAuditioning
+                        ? "bg-[#1F1F24] border-[#CCFF00] shadow-[0_0_20px_rgba(204,255,0,0.35)] ring-2 ring-[#CCFF00]"
+                        : isSelected
+                        ? "bg-[#1D1D21] border-[#CCFF00] shadow-[0_0_15px_rgba(204,255,0,0.25)] ring-1 ring-[#CCFF00]"
+                        : "bg-[#0A0A0B] border-[#222226] hover:border-[#44444c] hover:bg-[#141416]"
+                    }`}
+                  >
+                    <div>
+                      {/* Top Row: Category Tag, Genre, Audition Equalizer / Button */}
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold ${
+                              isAuditioning || isSelected
+                                ? "bg-[#CCFF00] text-black"
+                                : cat === "Clean"
+                                ? "bg-sky-950/80 text-sky-400 border border-sky-800/40"
+                                : cat === "Experimental"
+                                ? "bg-purple-950/80 text-purple-400 border border-purple-800/40"
+                                : "bg-[#141416] text-gray-400 border border-[#333338]"
                             }`}
-                            title={`Assign to Slot A (currently: ${slotA.name})`}
                           >
-                            A
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => handleLoadPresetToSlot(e, preset, "B")}
-                            className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-all cursor-pointer ${
-                              slotB.presetId === preset.id
-                                ? "bg-[#CCFF00] text-black font-black shadow-[0_0_6px_rgba(204,255,0,0.5)]"
-                                : "text-gray-400 hover:text-white"
-                            }`}
-                            title={`Assign to Slot B (currently: ${slotB.name})`}
-                          >
-                            B
-                          </button>
+                            {cat}
+                          </span>
+                          <span className="text-[9px] font-mono text-gray-500 truncate max-w-[85px]">
+                            {preset.subgenre}
+                          </span>
                         </div>
 
-                        {isAuditioning && (
-                          <div className="flex items-end gap-0.5 h-3.5 py-0.5">
-                            <span className="w-0.5 bg-[#CCFF00] rounded-full h-full animate-bounce" />
-                            <span className="w-0.5 bg-[#CCFF00] rounded-full h-2/3 animate-bounce [animation-delay:0.15s]" />
-                            <span className="w-0.5 bg-[#CCFF00] rounded-full h-full animate-bounce [animation-delay:0.3s]" />
-                            <span className="w-0.5 bg-[#CCFF00] rounded-full h-1/2 animate-bounce [animation-delay:0.45s]" />
+                        {/* Audition Button & Visual Equalizer Indicator */}
+                        <div className="flex items-center gap-1.5">
+                          {/* Quick Slot Assign Buttons */}
+                          <div className="flex items-center gap-0.5 bg-[#141416] p-0.5 rounded-lg border border-[#2b2b30]">
+                            <button
+                              type="button"
+                              onClick={(e) => handleLoadPresetToSlot(e, preset, "A")}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-all cursor-pointer ${
+                                slotA.presetId === preset.id
+                                  ? "bg-[#CCFF00] text-black font-black shadow-[0_0_6px_rgba(204,255,0,0.5)]"
+                                  : "text-gray-400 hover:text-white"
+                              }`}
+                              title={`Assign to Slot A (currently: ${slotA.name})`}
+                            >
+                              A
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => handleLoadPresetToSlot(e, preset, "B")}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-all cursor-pointer ${
+                                slotB.presetId === preset.id
+                                  ? "bg-[#CCFF00] text-black font-black shadow-[0_0_6px_rgba(204,255,0,0.5)]"
+                                  : "text-gray-400 hover:text-white"
+                              }`}
+                              title={`Assign to Slot B (currently: ${slotB.name})`}
+                            >
+                              B
+                            </button>
                           </div>
-                        )}
 
-                        <button
-                          type="button"
-                          onClick={(e) => handleToggleAudition(e, preset)}
-                          className={`p-1 rounded-lg border transition-all cursor-pointer ${
-                            isAuditioning
-                              ? "bg-[#CCFF00] text-black border-[#CCFF00] shadow-[0_0_8px_rgba(204,255,0,0.5)]"
-                              : "bg-[#141416] text-gray-400 border-[#2b2b30] hover:text-[#CCFF00] hover:border-[#CCFF00]/60"
-                          }`}
-                          title={isAuditioning ? "Stop audio preview" : "Audition audio sample riff"}
-                        >
-                          {isAuditioning ? (
-                            <Square className="w-3 h-3 fill-current" />
-                          ) : (
-                            <Volume2 className="w-3 h-3" />
+                          {isAuditioning && (
+                            <div className="flex items-end gap-0.5 h-3.5 py-0.5">
+                              <span className="w-0.5 bg-[#CCFF00] rounded-full h-full animate-bounce" />
+                              <span className="w-0.5 bg-[#CCFF00] rounded-full h-2/3 animate-bounce [animation-delay:0.15s]" />
+                              <span className="w-0.5 bg-[#CCFF00] rounded-full h-full animate-bounce [animation-delay:0.3s]" />
+                              <span className="w-0.5 bg-[#CCFF00] rounded-full h-1/2 animate-bounce [animation-delay:0.45s]" />
+                            </div>
                           )}
-                        </button>
 
-                        {isSelected && !isAuditioning && (
-                          <span className="w-2 h-2 rounded-full bg-[#CCFF00] shadow-[0_0_6px_rgba(204,255,0,0.9)] animate-pulse shrink-0" />
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleAudition(e, preset)}
+                            className={`p-1 rounded-lg border transition-all cursor-pointer ${
+                              isAuditioning
+                                ? "bg-[#CCFF00] text-black border-[#CCFF00] shadow-[0_0_8px_rgba(204,255,0,0.5)]"
+                                : "bg-[#141416] text-gray-400 border-[#2b2b30] hover:text-[#CCFF00] hover:border-[#CCFF00]/60"
+                            }`}
+                            title={isAuditioning ? "Stop audio preview" : "Audition audio sample riff"}
+                          >
+                            {isAuditioning ? (
+                              <Square className="w-3 h-3 fill-current" />
+                            ) : (
+                              <Volume2 className="w-3 h-3" />
+                            )}
+                          </button>
+
+                          {isSelected && !isAuditioning && (
+                            <span className="w-2 h-2 rounded-full bg-[#CCFF00] shadow-[0_0_6px_rgba(204,255,0,0.9)] animate-pulse shrink-0" />
+                          )}
+                        </div>
+                      </div>
+
+                      <h4 className="font-bold text-xs sm:text-sm font-mono text-gray-100 mt-2 line-clamp-1 group-hover:text-white flex items-center justify-between">
+                        <span>{preset.name}</span>
+                      </h4>
+                      <p className="text-[11px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">
+                        {preset.description}
+                      </p>
+                    </div>
+
+                    <div className="mt-2.5 pt-2 border-t border-[#222226] space-y-1.5">
+                      {/* Amp Model & Gain */}
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-gray-500 truncate max-w-[130px]">{preset.params.ampModel}</span>
+                        {isAuditioning ? (
+                          <span className="text-[#CCFF00] font-bold uppercase tracking-wider animate-pulse flex items-center gap-1">
+                            <Radio className="w-2.5 h-2.5" /> Auditioning
+                          </span>
+                        ) : (
+                          <span className="text-[#CCFF00] font-bold">Gain: {preset.params.gain.toFixed(1)}</span>
                         )}
                       </div>
-                    </div>
 
-                    <h4 className="font-bold text-xs sm:text-sm font-mono text-gray-100 mt-2 line-clamp-1 group-hover:text-white flex items-center justify-between">
-                      <span>{preset.name}</span>
-                    </h4>
-                    <p className="text-[11px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">
-                      {preset.description}
-                    </p>
-                  </div>
+                      {/* Usage Insights Bar: Last Used & Times Played */}
+                      <div className="pt-1 border-t border-[#1a1a1e] flex items-center justify-between text-[9.5px] font-mono">
+                        <div
+                          className="flex items-center gap-1 text-gray-500"
+                          title={
+                            usage.lastUsed
+                              ? `Last loaded: ${new Date(usage.lastUsed).toLocaleString()}`
+                              : "Never loaded yet"
+                          }
+                        >
+                          <Clock className="w-2.5 h-2.5 text-gray-500 shrink-0" />
+                          <span className={isSelected ? "text-[#CCFF00] font-bold" : "text-gray-400"}>
+                            {formatLastUsed(usage.lastUsed, isSelected)}
+                          </span>
+                        </div>
 
-                  <div className="mt-2.5 pt-2 border-t border-[#222226] space-y-1.5">
-                    {/* Amp Model & Gain */}
-                    <div className="flex items-center justify-between text-[10px] font-mono">
-                      <span className="text-gray-500 truncate max-w-[130px]">{preset.params.ampModel}</span>
-                      {isAuditioning ? (
-                        <span className="text-[#CCFF00] font-bold uppercase tracking-wider animate-pulse flex items-center gap-1">
-                          <Radio className="w-2.5 h-2.5" /> Auditioning
-                        </span>
-                      ) : (
-                        <span className="text-[#CCFF00] font-bold">Gain: {preset.params.gain.toFixed(1)}</span>
-                      )}
-                    </div>
-
-                    {/* Usage Insights Bar: Last Used & Times Played */}
-                    <div className="pt-1 border-t border-[#1a1a1e] flex items-center justify-between text-[9.5px] font-mono">
-                      <div
-                        className="flex items-center gap-1 text-gray-500"
-                        title={
-                          usage.lastUsed
-                            ? `Last loaded: ${new Date(usage.lastUsed).toLocaleString()}`
-                            : "Never loaded yet"
-                        }
-                      >
-                        <Clock className="w-2.5 h-2.5 text-gray-500 shrink-0" />
-                        <span className={isSelected ? "text-[#CCFF00] font-bold" : "text-gray-400"}>
-                          {formatLastUsed(usage.lastUsed, isSelected)}
-                        </span>
-                      </div>
-
-                      <div
-                        className="flex items-center gap-1"
-                        title={`Total times loaded: ${usage.count}`}
-                      >
-                        <Activity className={`w-2.5 h-2.5 shrink-0 ${usage.count > 0 ? "text-[#CCFF00]" : "text-gray-600"}`} />
-                        <span className={usage.count > 0 ? "text-gray-300 font-semibold" : "text-gray-600"}>
-                          {usage.count} {usage.count === 1 ? "play" : "plays"}
-                        </span>
+                        <div
+                          className="flex items-center gap-1"
+                          title={`Total times loaded: ${usage.count}`}
+                        >
+                          <Activity className={`w-2.5 h-2.5 shrink-0 ${usage.count > 0 ? "text-[#CCFF00]" : "text-gray-600"}`} />
+                          <span className={usage.count > 0 ? "text-gray-300 font-semibold" : "text-gray-600"}>
+                            {usage.count} {usage.count === 1 ? "play" : "plays"}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="py-8 text-center bg-[#0A0A0B] rounded-xl border border-[#222226] font-mono">
-            <Filter className="w-6 h-6 text-gray-600 mx-auto mb-2" />
-            <p className="text-xs text-gray-400">No presets matched "{searchQuery}" in category "{selectedCategory}".</p>
-            <button
-              onClick={() => {
-                setSelectedCategory("All");
-                setSearchQuery("");
-              }}
-              className="mt-2 text-xs text-[#CCFF00] hover:underline cursor-pointer"
+                  </motion.div>
+                );
+              })}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="empty-presets"
+              variants={presetCardVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              className="py-8 text-center bg-[#0A0A0B] rounded-xl border border-[#222226] font-mono"
             >
-              Reset Filters
-            </button>
-          </div>
-        )}
-      </div>
+              <Filter className="w-6 h-6 text-gray-600 mx-auto mb-2" />
+              <p className="text-xs text-gray-400">No presets matched "{searchQuery}" in category "{selectedCategory}".</p>
+              <button
+                onClick={() => {
+                  setSelectedCategory("All");
+                  setSearchQuery("");
+                }}
+                className="mt-2 text-xs text-[#CCFF00] hover:underline cursor-pointer"
+              >
+                Reset Filters
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
 
       {/* Real-Time Spectral Frequency Analyzer & DSP Visualizer Widget */}
-      <SpectralAnalyzer params={params} onTestRiff={handleTestRiff} />
+      <motion.div variants={bentoSectionVariants}>
+        <SpectralAnalyzer params={params} onTestRiff={handleTestRiff} />
+      </motion.div>
 
       {/* Main Amp Head Chassis */}
-      <div className="bg-gradient-to-b from-[#141416] via-[#0A0A0B] to-[#141416] border-2 border-[#222226] rounded-3xl p-5 sm:p-7 shadow-2xl relative overflow-hidden">
+      <motion.div
+        variants={bentoSectionVariants}
+        className="bg-gradient-to-b from-[#141416] via-[#0A0A0B] to-[#141416] border-2 border-[#222226] rounded-3xl p-5 sm:p-7 shadow-2xl relative overflow-hidden"
+      >
         {/* Metal corners */}
         <div className="absolute top-2 left-2 w-6 h-6 border-t-2 border-l-2 border-[#333338] pointer-events-none" />
         <div className="absolute top-2 right-2 w-6 h-6 border-t-2 border-r-2 border-[#333338] pointer-events-none" />
@@ -1625,12 +1663,15 @@ export const AmpRigStudio: React.FC = () => {
             </button>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Pre-FX & Post-FX Stompboxes and Cabinet Simulator Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+      <motion.div
+        variants={bentoSectionVariants}
+        className="grid grid-cols-1 md:grid-cols-12 gap-5"
+      >
         {/* PRE-FX PEDALS: Gate & Tube Screamer */}
-        <div className="md:col-span-4 space-y-4">
+        <motion.div variants={fxPedalCardVariants} className="md:col-span-4 space-y-4">
           {/* Noise Gate Pedal */}
           <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 shadow-xl flex flex-col justify-between">
             <div className="flex items-center justify-between pb-3 border-b border-[#222226]">
@@ -1745,10 +1786,13 @@ export const AmpRigStudio: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </motion.div>
 
         {/* CABINET & MIC SIMULATOR */}
-        <div className="md:col-span-4 bg-[#141416] border border-[#222226] rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+        <motion.div
+          variants={fxPedalCardVariants}
+          className="md:col-span-4 bg-[#141416] border border-[#222226] rounded-2xl p-4 shadow-xl flex flex-col justify-between"
+        >
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-[#222226]">
               <div className="flex items-center gap-2">
@@ -1821,10 +1865,10 @@ export const AmpRigStudio: React.FC = () => {
               onChange={(v) => handleParamChange("cabAir", v)}
             />
           </div>
-        </div>
+        </motion.div>
 
         {/* POST-FX: 5-Band Metal Graphic EQ & Delay/Reverb */}
-        <div className="md:col-span-4 space-y-4">
+        <motion.div variants={fxPedalCardVariants} className="md:col-span-4 space-y-4">
           {/* 5-Band Graphic EQ */}
           <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 shadow-xl">
             <div className="flex items-center justify-between pb-3 border-b border-[#222226]">
@@ -1959,70 +2003,92 @@ export const AmpRigStudio: React.FC = () => {
               />
             </div>
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* Save Custom Preset Modal */}
-      {showSaveModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#141416] border border-[#222226] rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <h3 className="text-base font-bold font-mono text-white flex items-center gap-2">
-              <Save className="w-5 h-5 text-[#CCFF00]" /> Save Custom Metal Rig Preset
-            </h3>
-            <p className="text-xs text-gray-400">
-              Save your dialed rig settings (amp head, overdrive, gate, IR, and EQ) to your local preset library.
-            </p>
-            <input
-              type="text"
-              value={customPresetName}
-              onChange={(e) => setCustomPresetName(e.target.value)}
-              placeholder="e.g. My Heavy 0-0-0 Destroyer"
-              className="w-full bg-[#0A0A0B] border border-[#222226] rounded-xl px-3 py-2 text-sm text-gray-100 font-mono focus:border-[#CCFF00] outline-none"
-            />
-            <div>
-              <label className="text-[11px] font-mono text-gray-400 block mb-1.5 uppercase font-bold">Preset Category</label>
-              <div className="grid grid-cols-3 gap-2">
-                {(["High-Gain", "Clean", "Experimental"] as const).map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setCustomPresetCategory(cat)}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-mono font-bold transition-all border cursor-pointer ${
-                      customPresetCategory === cat
-                        ? "bg-[#CCFF00] text-black border-[#CCFF00]"
-                        : "bg-[#0A0A0B] text-gray-400 border-[#222226] hover:border-[#333338]"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
+      <AnimatePresence>
+        {showSaveModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="bg-[#141416] border border-[#222226] rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4"
+            >
+              <h3 className="text-base font-bold font-mono text-white flex items-center gap-2">
+                <Save className="w-5 h-5 text-[#CCFF00]" /> Save Custom Metal Rig Preset
+              </h3>
+              <p className="text-xs text-gray-400">
+                Save your dialed rig settings (amp head, overdrive, gate, IR, and EQ) to your local preset library.
+              </p>
+              <input
+                type="text"
+                value={customPresetName}
+                onChange={(e) => setCustomPresetName(e.target.value)}
+                placeholder="e.g. My Heavy 0-0-0 Destroyer"
+                className="w-full bg-[#0A0A0B] border border-[#222226] rounded-xl px-3 py-2 text-sm text-gray-100 font-mono focus:border-[#CCFF00] outline-none"
+              />
+              <div>
+                <label className="text-[11px] font-mono text-gray-400 block mb-1.5 uppercase font-bold">Preset Category</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["High-Gain", "Clean", "Experimental"] as const).map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setCustomPresetCategory(cat)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-mono font-bold transition-all border cursor-pointer ${
+                        customPresetCategory === cat
+                          ? "bg-[#CCFF00] text-black border-[#CCFF00]"
+                          : "bg-[#0A0A0B] text-gray-400 border-[#222226] hover:border-[#333338]"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setShowSaveModal(false)}
-                className="px-4 py-2 rounded-xl bg-[#1D1D21] text-gray-300 text-xs font-mono hover:bg-[#25252b] border border-[#333338] cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveCustomPreset}
-                disabled={!customPresetName.trim()}
-                className="px-5 py-2 rounded-xl bg-[#CCFF00] hover:bg-[#b8e600] text-black font-bold text-xs font-mono disabled:opacity-50 cursor-pointer"
-              >
-                Save Preset
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowSaveModal(false)}
+                  className="px-4 py-2 rounded-xl bg-[#1D1D21] text-gray-300 text-xs font-mono hover:bg-[#25252b] border border-[#333338] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveCustomPreset}
+                  disabled={!customPresetName.trim()}
+                  className="px-5 py-2 rounded-xl bg-[#CCFF00] hover:bg-[#b8e600] text-black font-bold text-xs font-mono disabled:opacity-50 cursor-pointer"
+                >
+                  Save Preset
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Floating A/B Switch Toast */}
-      {abToastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#141416] border border-[#CCFF00] text-white px-4 py-2.5 rounded-xl shadow-[0_0_20px_rgba(204,255,0,0.3)] font-mono text-xs flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200">
-          <Zap className="w-4 h-4 text-[#CCFF00] shrink-0" />
-          <span>{abToastMessage}</span>
-        </div>
-      )}
-    </div>
+      <AnimatePresence>
+        {abToastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.96 }}
+            transition={{ duration: 0.2 }}
+            className="fixed bottom-6 right-6 z-50 bg-[#141416] border border-[#CCFF00] text-white px-4 py-2.5 rounded-xl shadow-[0_0_20px_rgba(204,255,0,0.3)] font-mono text-xs flex items-center gap-2"
+          >
+            <Zap className="w-4 h-4 text-[#CCFF00] shrink-0" />
+            <span>{abToastMessage}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 };
