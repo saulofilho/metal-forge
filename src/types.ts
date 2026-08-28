@@ -63,6 +63,18 @@ export interface AmpParams {
   gateThreshold: number; // -80 to -20 dB
   gateRelease: number; // 0.01 to 0.5 s
 
+  // Signal Normalizer (Pre-Distortion Input Conditioner & Acoustic/Clean Clean-Up)
+  normalizerEnabled?: boolean;
+  normalizerProfile?: "Acoustic / Piezo" | "Direct Single-Coil" | "Hot Humbucker" | "Active Pickups" | "Custom / Manual";
+  normalizerThreshold?: number; // -40 to 0 dB (e.g. -18 dB)
+  normalizerRatio?: number; // 1 to 20 (e.g. 4:1)
+  normalizerAttack?: number; // 0.001 to 0.05 s (1ms to 50ms, e.g. 0.005)
+  normalizerRelease?: number; // 0.02 to 0.5 s (20ms to 500ms, e.g. 0.08)
+  normalizerMakeupGain?: number; // 0 to +18 dB (e.g. +3 dB)
+  normalizerLowCut?: number; // 20 to 300 Hz (e.g. 80 Hz, anti-boom / body rumble)
+  normalizerHighCut?: number; // 4000 to 20000 Hz (e.g. 12000 Hz, anti-fizz / clack)
+  normalizerDeMud?: number; // -12 to +6 dB cut around 400 Hz (e.g. -3 dB)
+
   // Overdrive (Tube Screamer TS9)
   driveEnabled: boolean;
   driveGain: number; // 0 to 10
@@ -195,8 +207,33 @@ export type DrumBeatPattern =
   | "Blast Beat (Death/Black)"
   | "Half-Time Groove (Metalcore)"
   | "Djent Polyrhythm (7/8 & 4/4)"
+  | "Classic 4/4 Hard Rock"
   | "Slow Sludge Doom (60 BPM)"
   | "None / Click Only";
+
+export type StrumPatternFeel = "sustain" | "chug8ths" | "chug16ths" | "gallop" | "syncopated" | "muted";
+
+export interface BacktrackerChordItem {
+  id: string;
+  chordName: string;
+  metalName?: string;
+  fretPositions: (number | "x")[];
+  durationBeats: number; // 1, 2, 3, 4 beats
+  isPalmMute?: boolean;
+  strumPattern?: StrumPatternFeel;
+  tabSnippet?: string;
+}
+
+export interface BacktrackerProgressionPreset {
+  id: string;
+  title: string;
+  subgenre: MetalSubgenre;
+  defaultBpm: number;
+  drumPattern: DrumBeatPattern;
+  strumFeel: StrumPatternFeel;
+  description: string;
+  chords: BacktrackerChordItem[];
+}
 
 export interface ScrapedSongSection {
   name: string;
@@ -255,6 +292,37 @@ export interface StyleConversionResult {
   };
   breakdownPattern?: string;
   fretboardTips: string[];
+}
+
+export type TransposedSongSection = SongSection;
+
+export interface SavedRiffItem {
+  id: string;
+  title: string;
+  originalArtist: string;
+  originalGenre?: string;
+  subgenre: MetalSubgenre;
+  originalKey?: string;
+  metalKey: string;
+  bpm: number;
+  tuning: string;
+  sourceType: "scraped" | "converted" | "manual" | "preset";
+  sourceUrl?: string;
+  tags: string[];
+  isFavorite: boolean;
+  createdAt: string;
+  updatedAt: string;
+  userNotes?: string;
+  sections: SongSection[];
+  chordTransformations?: ChordTransformItem[];
+  recommendedRig?: {
+    presetId: string;
+    name: string;
+    ampModel: string;
+    distortionTip?: string;
+    pedals?: string[];
+  };
+  breakdownPattern?: string;
 }
 
 export interface TunerResult {

@@ -216,7 +216,93 @@ export const AmpRigStudio: React.FC = () => {
   }, [params]);
 
   // Metering state
-  const [levels, setLevels] = useState({ in: 0, out: 0, gate: true });
+  const [levels, setLevels] = useState({ in: 0, out: 0, gate: true, normalizerReduction: 0 });
+
+  // Polling loop for live VU meters and compressor gain reduction
+  useEffect(() => {
+    let animId: number;
+    const poll = () => {
+      setLevels({
+        in: audioEngine.inputLevel,
+        out: audioEngine.outputLevel,
+        gate: audioEngine.isGateOpen,
+        normalizerReduction: audioEngine.normalizerGainReduction,
+      });
+      animId = requestAnimationFrame(poll);
+    };
+    animId = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(animId);
+  }, [audioEngine]);
+
+  // Dedicated Signal Normalizer Profiles (Acoustic / Clean-to-Metal Input Optimization)
+  const normalizerProfiles = [
+    {
+      id: "Acoustic / Piezo" as const,
+      label: "Acoustic / Piezo",
+      badge: "De-Mud & Body",
+      desc: "Cleans body boom, notches 400Hz mud & clamps spikes",
+      lowCut: 90,
+      deMud: -4.5,
+      highCut: 11000,
+      threshold: -20,
+      ratio: 4.5,
+      makeup: 4.5,
+    },
+    {
+      id: "Direct Single-Coil" as const,
+      label: "Direct Single-Coil",
+      badge: "Clean Boost",
+      desc: "Levels low output & tames harsh ice-pick transients",
+      lowCut: 65,
+      deMud: -2.0,
+      highCut: 13500,
+      threshold: -18,
+      ratio: 3.5,
+      makeup: 3.0,
+    },
+    {
+      id: "Hot Humbucker" as const,
+      label: "Hot Humbucker",
+      badge: "Tight Chug",
+      desc: "Controls high pickup output before high-gain stages",
+      lowCut: 45,
+      deMud: -2.0,
+      highCut: 16000,
+      threshold: -15,
+      ratio: 3.0,
+      makeup: 1.5,
+    },
+    {
+      id: "Active Pickups" as const,
+      label: "Active Pickups",
+      badge: "Transparent",
+      desc: "Subtle peak leveling with transparent high headroom",
+      lowCut: 30,
+      deMud: 0,
+      highCut: 18000,
+      threshold: -12,
+      ratio: 2.5,
+      makeup: 0.5,
+    },
+  ];
+
+  const handleApplyNormalizerProfile = (prof: typeof normalizerProfiles[number]) => {
+    const updated: AmpParams = {
+      ...params,
+      normalizerEnabled: true,
+      normalizerProfile: prof.id,
+      normalizerLowCut: prof.lowCut,
+      normalizerDeMud: prof.deMud,
+      normalizerHighCut: prof.highCut,
+      normalizerThreshold: prof.threshold,
+      normalizerRatio: prof.ratio,
+      normalizerMakeupGain: prof.makeup,
+    };
+    setParams(updated);
+    activeParamsRef.current = updated;
+    audioEngine.applyAmpParams(updated);
+    showAbToast(`Applied "${prof.label}" Input Conditioner`);
+  };
 
   // Filtered and Sorted preset list based on category, search query & sort mode
   const filteredPresets = useMemo(() => {
@@ -1715,6 +1801,153 @@ export const AmpRigStudio: React.FC = () => {
                 color="cyan"
                 size="md"
                 onChange={(v) => handleParamChange("gateRelease", v / 1000)}
+              />
+            </div>
+          </div>
+
+          {/* Dedicated Signal Normalizer & Input Conditioner DSP Node */}
+          <div className="bg-[#141416] border border-[#222226] rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+            <div className="flex items-center justify-between pb-3 border-b border-[#222226]">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    params.normalizerEnabled ? "bg-[#CCFF00] shadow-[0_0_8px_rgba(204,255,0,0.9)]" : "bg-gray-700"
+                  }`}
+                />
+                <div>
+                  <h4 className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                    SIGNAL NORMALIZER DSP
+                  </h4>
+                  <span className="text-[9px] font-mono text-gray-400 block -mt-0.5">
+                    Pre-Distortion Input Conditioner
+                  </span>
+                </div>
+              </div>
+              <button
+                id="btn-toggle-normalizer"
+                onClick={() => handleParamChange("normalizerEnabled", !params.normalizerEnabled)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all border cursor-pointer ${
+                  params.normalizerEnabled
+                    ? "bg-[#CCFF00] text-black border-[#CCFF00] shadow-sm"
+                    : "bg-[#1D1D21] text-gray-400 border-[#333338]"
+                }`}
+              >
+                {params.normalizerEnabled ? "ENGAGED" : "BYPASS"}
+              </button>
+            </div>
+
+            {/* Quick Profile Selectors */}
+            <div className="mt-3">
+              <label className="text-[10px] font-mono text-gray-400 uppercase font-bold block mb-1.5">
+                Input Source Conditioning Profiles
+              </label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {normalizerProfiles.map((prof) => {
+                  const isSelected = params.normalizerProfile === prof.id && params.normalizerEnabled;
+                  return (
+                    <button
+                      key={prof.id}
+                      type="button"
+                      onClick={() => handleApplyNormalizerProfile(prof)}
+                      className={`px-2 py-1.5 rounded-lg text-left transition-all border cursor-pointer ${
+                        isSelected
+                          ? "bg-[#CCFF00]/15 text-[#CCFF00] border-[#CCFF00]"
+                          : "bg-[#0A0A0B] text-gray-300 border-[#222226] hover:border-[#333338]"
+                      }`}
+                      title={prof.desc}
+                    >
+                      <div className="text-[10px] font-mono font-bold truncate">{prof.label}</div>
+                      <div className="text-[9px] text-gray-500 font-mono truncate">{prof.badge}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Real-time Compressor Gain Reduction Meter */}
+            <div className="mt-3 bg-[#0A0A0B] p-2.5 rounded-xl border border-[#222226]">
+              <div className="flex items-center justify-between text-[10px] font-mono mb-1">
+                <span className="text-gray-400 uppercase font-bold">GAIN REDUCTION (GR):</span>
+                <span className="text-[#CCFF00] font-bold">
+                  {params.normalizerEnabled && levels.normalizerReduction > 0.1
+                    ? `-${levels.normalizerReduction.toFixed(1)} dB`
+                    : "0.0 dB"}
+                </span>
+              </div>
+              <div className="w-full h-2 bg-[#1D1D21] rounded-full overflow-hidden flex border border-[#333338]">
+                <div
+                  className="h-full bg-gradient-to-r from-emerald-500 via-yellow-500 to-red-500 transition-all duration-75"
+                  style={{
+                    width: `${
+                      params.normalizerEnabled
+                        ? Math.min(100, (levels.normalizerReduction / 12) * 100)
+                        : 0
+                    }%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Normalizer Controls (Threshold, Ratio, Makeup Gain, Low Cut, De-Mud, Hi Cut) */}
+            <div className="grid grid-cols-3 gap-2 mt-3">
+              <Knob
+                label="THRESH"
+                value={params.normalizerThreshold ?? -18}
+                min={-40}
+                max={0}
+                unit="dB"
+                color="lime"
+                size="sm"
+                onChange={(v) => handleParamChange("normalizerThreshold", v)}
+              />
+              <Knob
+                label="RATIO"
+                value={params.normalizerRatio ?? 4}
+                min={1}
+                max={16}
+                color="cyan"
+                size="sm"
+                onChange={(v) => handleParamChange("normalizerRatio", v)}
+              />
+              <Knob
+                label="MAKEUP"
+                value={params.normalizerMakeupGain ?? 3}
+                min={0}
+                max={15}
+                unit="dB"
+                color="yellow"
+                size="sm"
+                onChange={(v) => handleParamChange("normalizerMakeupGain", v)}
+              />
+              <Knob
+                label="LOW CUT"
+                value={params.normalizerLowCut ?? 80}
+                min={20}
+                max={300}
+                unit="Hz"
+                color="red"
+                size="sm"
+                onChange={(v) => handleParamChange("normalizerLowCut", v)}
+              />
+              <Knob
+                label="DE-MUD"
+                value={params.normalizerDeMud ?? -3}
+                min={-12}
+                max={6}
+                unit="dB"
+                color="purple"
+                size="sm"
+                onChange={(v) => handleParamChange("normalizerDeMud", v)}
+              />
+              <Knob
+                label="HI CUT"
+                value={Math.round((params.normalizerHighCut ?? 12000) / 1000)}
+                min={4}
+                max={20}
+                unit="kHz"
+                color="cyan"
+                size="sm"
+                onChange={(v) => handleParamChange("normalizerHighCut", v * 1000)}
               />
             </div>
           </div>

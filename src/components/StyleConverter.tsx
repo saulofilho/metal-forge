@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { AudioEngine } from "../audio/audioEngine";
 import { FACTORY_PRESETS } from "../audio/presetLibrary";
 import { StyleConversionResult, MetalSubgenre } from "../types";
+import { RiffLibraryStorage } from "../audio/riffLibraryStorage";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Flame,
@@ -21,6 +22,8 @@ import {
   Shield,
   Layers,
   Wand2,
+  BookmarkPlus,
+  BookmarkCheck,
 } from "lucide-react";
 
 interface StyleConverterProps {
@@ -190,6 +193,39 @@ export const StyleConverter: React.FC<StyleConverterProps> = ({ onLoadAmpPreset,
       if (onLoadAmpPreset) onLoadAmpPreset(match.id);
     }
     if (onNavigateToAmp) onNavigateToAmp();
+  };
+
+  const [savedToVault, setSavedToVault] = useState(false);
+
+  const handleSaveToVault = () => {
+    if (!convertedData) return;
+    const storage = RiffLibraryStorage.getInstance();
+    storage.saveRiff({
+      title: `${convertedData.originalTitle} (${convertedData.targetMetalSubgenre})`,
+      originalArtist: convertedData.originalArtist,
+      originalGenre: convertedData.originalGenre,
+      subgenre: convertedData.targetMetalSubgenre,
+      originalKey: convertedData.originalKey,
+      metalKey: convertedData.metalKey,
+      bpm: convertedData.metalBpm,
+      tuning: "Drop C (C-G-C-F-A-D)",
+      sourceType: "converted",
+      tags: [convertedData.originalArtist, convertedData.targetMetalSubgenre, "Style Converted", "Drop C"],
+      isFavorite: true,
+      userNotes: convertedData.transformationNotes,
+      recommendedRig: convertedData.recommendedRig,
+      breakdownPattern: convertedData.breakdownPattern,
+      chordTransformations: convertedData.chordTransformations,
+      sections: convertedData.sections.map((s) => ({
+        name: s.name,
+        originalChords: s.originalChords,
+        metalChords: s.metalChords,
+        technique: `${s.technique} (Drum: ${s.drumFeel})`,
+        tab: s.tab,
+      })),
+    });
+    setSavedToVault(true);
+    setTimeout(() => setSavedToVault(false), 3000);
   };
 
   const handleCopyMetalTab = () => {
@@ -419,6 +455,28 @@ Recommended Rig: ${convertedData.recommendedRig.name} (${convertedData.recommend
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  id="btn-save-converted-to-vault"
+                  onClick={handleSaveToVault}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                    savedToVault
+                      ? "bg-emerald-950/80 text-emerald-400 border-emerald-700 shadow-md shadow-emerald-500/20"
+                      : "bg-[#1D1D21] hover:bg-[#25252b] text-gray-200 hover:text-white border-[#333338]"
+                  }`}
+                >
+                  {savedToVault ? (
+                    <>
+                      <BookmarkCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Saved to Vault!</span>
+                    </>
+                  ) : (
+                    <>
+                      <BookmarkPlus className="w-3.5 h-3.5 text-[#CCFF00]" />
+                      <span>Save to Riff Vault</span>
+                    </>
+                  )}
+                </button>
+
                 <button
                   onClick={handleApplyRecommendedRig}
                   className="px-3.5 py-2 rounded-xl bg-[#1D1D21] hover:bg-[#25252b] text-[#CCFF00] text-xs font-mono font-bold flex items-center gap-1.5 transition-all border border-[#333338] cursor-pointer"

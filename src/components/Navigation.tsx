@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import {
   Flame,
   Sliders,
@@ -11,6 +11,9 @@ import {
   MicOff,
   Zap,
   BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  GripHorizontal,
 } from "lucide-react";
 
 export type StudioTab = "transposer" | "amp-rig" | "live-hud" | "tuner" | "daw" | "metal-history";
@@ -74,6 +77,135 @@ export const Navigation: React.FC<NavigationProps> = ({
       badge: "Eras & Subgenres",
     },
   ];
+
+  // Drag-to-scroll & Grab state
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [isMouseDown, setIsMouseDown] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollStart, setScrollStart] = useState(0);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const dragDistanceRef = useRef(0);
+
+  // Check scroll boundary to show/hide gradient indicators & buttons
+  const checkScrollBoundaries = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    setCanScrollLeft(scrollLeft > 6);
+    setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 6);
+  }, []);
+
+  useEffect(() => {
+    checkScrollBoundaries();
+    window.addEventListener("resize", checkScrollBoundaries);
+    return () => window.removeEventListener("resize", checkScrollBoundaries);
+  }, [checkScrollBoundaries]);
+
+  // Smooth scroll left or right with navigation buttons
+  const handleScrollStep = (direction: "left" | "right") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const amount = direction === "left" ? -280 : 280;
+    el.scrollBy({ left: amount, behavior: "smooth" });
+  };
+
+  // Mouse / Pointer Down - initiate grab
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setIsMouseDown(true);
+    setIsDragging(false);
+    dragDistanceRef.current = 0;
+    setStartX(e.clientX);
+    setScrollStart(el.scrollLeft);
+  };
+
+  // Mouse / Pointer Move - perform grab drag
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isMouseDown) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    e.preventDefault();
+    const deltaX = e.clientX - startX;
+    const distance = Math.abs(deltaX);
+    dragDistanceRef.current = distance;
+    if (distance > 4) {
+      setIsDragging(true);
+    }
+    el.scrollLeft = scrollStart - deltaX * 1.35;
+    checkScrollBoundaries();
+  };
+
+  // Touch Start
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setIsMouseDown(true);
+    setIsDragging(false);
+    dragDistanceRef.current = 0;
+    setStartX(e.touches[0].clientX);
+    setScrollStart(el.scrollLeft);
+  };
+
+  // Touch Move
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isMouseDown) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const deltaX = e.touches[0].clientX - startX;
+    const distance = Math.abs(deltaX);
+    dragDistanceRef.current = distance;
+    if (distance > 4) {
+      setIsDragging(true);
+    }
+    el.scrollLeft = scrollStart - deltaX * 1.2;
+    checkScrollBoundaries();
+  };
+
+  // Mouse Up / Leave - end grab
+  const handleMouseUpOrLeave = () => {
+    setIsMouseDown(false);
+    setTimeout(() => {
+      setIsDragging(false);
+      dragDistanceRef.current = 0;
+    }, 60);
+  };
+
+  // Horizontal Wheel Support
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      el.scrollLeft += e.deltaY;
+      checkScrollBoundaries();
+    }
+  };
+
+  // Handle Tab Click (Prevent accidental selection while dragging)
+  const handleTabClick = (tabId: StudioTab) => {
+    if (isDragging || dragDistanceRef.current > 5) return;
+    onSelectTab(tabId);
+  };
+
+
+  // Auto-scroll current active tab into view
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const activeBtn = el.querySelector(`#nav-tab-${currentTab}`) as HTMLElement;
+    if (activeBtn) {
+      const containerLeft = el.scrollLeft;
+      const containerRight = containerLeft + el.clientWidth;
+      const btnLeft = activeBtn.offsetLeft;
+      const btnRight = btnLeft + activeBtn.clientWidth;
+
+      if (btnLeft < containerLeft || btnRight > containerRight) {
+        activeBtn.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      }
+    }
+  }, [currentTab]);
 
   return (
     <header className="sticky top-0 z-40 bg-[#0A0A0B]/90 backdrop-blur-md border-b border-[#222226]">
@@ -170,36 +302,98 @@ export const Navigation: React.FC<NavigationProps> = ({
           </div>
         </div>
 
-        {/* Bento Module Switcher Tabs */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-          {tabs.map((tab) => {
-            const isCurrent = currentTab === tab.id;
-            const Icon = tab.icon;
-            return (
+        {/* Bento Module Switcher Tabs with Grab & Drag-to-Scroll + Micro Navigation Controls */}
+        <div className="relative group/nav-bar select-none">
+          {/* Left Scroll Step Button */}
+          {canScrollLeft && (
+            <div className="absolute left-0 top-0 bottom-1 z-20 flex items-center pr-4 bg-gradient-to-r from-[#0A0A0B] via-[#0A0A0B]/90 to-transparent">
               <button
-                key={tab.id}
-                id={`nav-tab-${tab.id}`}
-                onClick={() => onSelectTab(tab.id)}
-                className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center gap-2.5 whitespace-nowrap border cursor-pointer ${
-                  isCurrent
-                    ? "bg-[#CCFF00] text-black border-[#CCFF00] shadow-[0_0_15px_rgba(204,255,0,0.25)]"
-                    : "bg-[#141416] hover:bg-[#1D1D21] text-gray-400 hover:text-gray-200 border-[#222226]"
-                }`}
+                type="button"
+                onClick={() => handleScrollStep("left")}
+                aria-label="Scroll menu left"
+                className="w-7 h-7 rounded-lg bg-[#1D1D21]/95 hover:bg-[#282830] text-[#CCFF00] border border-[#333338] shadow-lg flex items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95"
               >
-                <Icon className={`w-4 h-4 ${isCurrent ? "text-black" : "text-[#CCFF00]"}`} />
-                <span className="tracking-tight uppercase">{tab.label}</span>
-                <span
-                  className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase ${
-                    isCurrent ? "bg-black/20 text-black" : "bg-[#0A0A0B] text-gray-400 border border-[#222226]"
-                  }`}
-                >
-                  {tab.badge}
-                </span>
+                <ChevronLeft className="w-4 h-4" />
               </button>
-            );
-          })}
+            </div>
+          )}
+
+          {/* Right Scroll Step Button */}
+          {canScrollRight && (
+            <div className="absolute right-0 top-0 bottom-1 z-20 flex items-center pl-4 bg-gradient-to-l from-[#0A0A0B] via-[#0A0A0B]/90 to-transparent">
+              <button
+                type="button"
+                onClick={() => handleScrollStep("right")}
+                aria-label="Scroll menu right"
+                className="w-7 h-7 rounded-lg bg-[#1D1D21]/95 hover:bg-[#282830] text-[#CCFF00] border border-[#333338] shadow-lg flex items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Grab & Scrollable Container */}
+          <div
+            ref={scrollRef}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUpOrLeave}
+            onMouseLeave={handleMouseUpOrLeave}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleMouseUpOrLeave}
+            onWheel={handleWheel}
+            onScroll={checkScrollBoundaries}
+            className={`flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none touch-pan-x select-none transition-colors ${
+              isMouseDown ? "cursor-grabbing" : "cursor-grab"
+            }`}
+            style={{
+              scrollBehavior: isDragging ? "auto" : "smooth",
+            }}
+          >
+            {/* Grab Drag Indicator Handle */}
+            <div
+              className={`flex items-center justify-center px-2 py-2.5 rounded-lg border border-dashed transition-all shrink-0 ${
+                isMouseDown
+                  ? "bg-[#CCFF00]/10 border-[#CCFF00] text-[#CCFF00] cursor-grabbing"
+                  : "bg-[#141416]/50 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700 cursor-grab"
+              }`}
+              title="Click/touch and drag horizontally to scroll through workstation modules"
+            >
+              <GripHorizontal className="w-4 h-4" />
+            </div>
+
+            {tabs.map((tab) => {
+              const isCurrent = currentTab === tab.id;
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  id={`nav-tab-${tab.id}`}
+                  onClick={() => handleTabClick(tab.id)}
+                  className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center gap-2.5 whitespace-nowrap border shrink-0 ${
+                    isCurrent
+                      ? "bg-[#CCFF00] text-black border-[#CCFF00] shadow-[0_0_15px_rgba(204,255,0,0.25)]"
+                      : "bg-[#141416] hover:bg-[#1D1D21] text-gray-400 hover:text-gray-200 border-[#222226]"
+                  } ${isMouseDown ? "cursor-grabbing" : "cursor-pointer active:cursor-grabbing"}`}
+                >
+                  <Icon className={`w-4 h-4 ${isCurrent ? "text-black" : "text-[#CCFF00]"}`} />
+                  <span className="tracking-tight uppercase">{tab.label}</span>
+                  <span
+                    className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase ${
+                      isCurrent ? "bg-black/20 text-black" : "bg-[#0A0A0B] text-gray-400 border border-[#222226]"
+                    }`}
+                  >
+                    {tab.badge}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
         </div>
       </div>
     </header>
   );
 };
+

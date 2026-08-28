@@ -3,8 +3,39 @@
  * Real-time guitar amp & pedalboard simulator, Drop C synth, tuner, metal drum machine, and multitrack DAW recorder.
  */
 
-import { AmpParams, DrumBeatPattern, TunerResult } from "../types";
+import { AmpParams, BacktrackerChordItem, DrumBeatPattern, StrumPatternFeel, TunerResult } from "../types";
 import { DROP_C_STRINGS, TUNING_PRESETS_MAP } from "./dropCData";
+
+export interface BacktrackerSessionOptions {
+  bpm: number;
+  drumPattern: DrumBeatPattern;
+  strumFeel: StrumPatternFeel;
+  chords: BacktrackerChordItem[];
+  enableCountIn?: boolean;
+  playDrums?: boolean;
+  playChords?: boolean;
+  playClick?: boolean;
+  drumsVolume?: number; // 0 to 1
+  chordsVolume?: number; // 0 to 1
+  clickVolume?: number; // 0 to 1
+  autoSpeedTrainer?: boolean;
+  speedTrainerIncrement?: number;
+  speedTrainerIntervalLoops?: number;
+  loopMode?: "loop_indefinite" | "single_pass";
+  onStep?: (info: {
+    step16: number; // 0 to 15
+    beat: number; // 0, 1, 2, 3
+    measureIndex: number;
+    loopCount: number;
+    chordIndex: number;
+    currentChord: BacktrackerChordItem | null;
+    nextChord: BacktrackerChordItem | null;
+    currentBpm: number;
+    isCountIn: boolean;
+    countInBeat: number;
+  }) => void;
+  onLoopCompleted?: (loopCount: number, newBpm: number) => void;
+}
 
 export class AudioEngine {
   private static instance: AudioEngine | null = null;
@@ -17,6 +48,17 @@ export class AudioEngine {
 
   // DSP Node Graph
   private gateGainNode: GainNode | null = null;
+
+  // Dedicated Signal Normalizer & Input Conditioner Stage (Clean-Up & Compression before High-Gain Distortion)
+  private normalizerInputGain: GainNode | null = null;
+  private normalizerLowCut: BiquadFilterNode | null = null;
+  private normalizerDeMud: BiquadFilterNode | null = null;
+  private normalizerHighCut: BiquadFilterNode | null = null;
+  private normalizerCompressor: DynamicsCompressorNode | null = null;
+  private normalizerMakeupGain: GainNode | null = null;
+  private normalizerDryGain: GainNode | null = null;
+  private normalizerWetGain: GainNode | null = null;
+
   private drivePreFilter: BiquadFilterNode | null = null;
   private drivePostFilter: BiquadFilterNode | null = null;
   private driveWaveshaper: WaveShaperNode | null = null;
@@ -72,14 +114,15 @@ export class AudioEngine {
   private masterLimiter: DynamicsCompressorNode | null = null;
   public analyserNode: AnalyserNode | null = null;
 
-  // Tuner Analyser & Processing
-  private tunerAnalyser: AnalyserNode | null = null;
+  // Tuner & Input Analyser Processing
+  public tunerAnalyser: AnalyserNode | null = null;
   private tunerBuffer: Float32Array = new Float32Array(2048);
 
   // Metering & Gate monitoring
   public inputLevel = 0;
   public outputLevel = 0;
   public isGateOpen = true;
+  public normalizerGainReduction = 0; // dB reduction applied by normalizer compressor
 
   // Virtual Synth Gain
   public synthBusGain: GainNode | null = null;
@@ -150,6 +193,53 @@ export class AudioEngine {
     this.gateGainNode.gain.value = 1.0;
     this.inputGainNode.connect(this.gateGainNode);
 
+    // 2b. Signal Normalizer DSP Stage (Clean-Up, De-Mud, Compression, Auto-Leveling before High-Gain Distortion)
+    this.normalizerInputGain = ctx.createGain();
+    this.normalizerInputGain.gain.value = 1.0;
+
+    this.normalizerLowCut = ctx.createBiquadFilter();
+    this.normalizerLowCut.type = "highpass";
+    this.normalizerLowCut.frequency.value = 80;
+    this.normalizerLowCut.Q.value = 0.707;
+
+    this.normalizerDeMud = ctx.createBiquadFilter();
+    this.normalizerDeMud.type = "peaking";
+    this.normalizerDeMud.frequency.value = 400;
+    this.normalizerDeMud.Q.value = 1.6;
+    this.normalizerDeMud.gain.value = -3.0;
+
+    this.normalizerHighCut = ctx.createBiquadFilter();
+    this.normalizerHighCut.type = "lowpass";
+    this.normalizerHighCut.frequency.value = 12000;
+
+    this.normalizerCompressor = ctx.createDynamicsCompressor();
+    this.normalizerCompressor.threshold.value = -18;
+    this.normalizerCompressor.knee.value = 6;
+    this.normalizerCompressor.ratio.value = 4;
+    this.normalizerCompressor.attack.value = 0.005;
+    this.normalizerCompressor.release.value = 0.08;
+
+    this.normalizerMakeupGain = ctx.createGain();
+    this.normalizerMakeupGain.gain.value = 1.4; // ~ +3 dB
+
+    this.normalizerWetGain = ctx.createGain();
+    this.normalizerWetGain.gain.value = 0.0;
+
+    this.normalizerDryGain = ctx.createGain();
+    this.normalizerDryGain.gain.value = 1.0;
+
+    // Route Gate -> Normalizer Serial Processing Path
+    this.gateGainNode.connect(this.normalizerInputGain);
+    this.normalizerInputGain.connect(this.normalizerLowCut);
+    this.normalizerLowCut.connect(this.normalizerDeMud);
+    this.normalizerDeMud.connect(this.normalizerHighCut);
+    this.normalizerHighCut.connect(this.normalizerCompressor);
+    this.normalizerCompressor.connect(this.normalizerMakeupGain);
+    this.normalizerMakeupGain.connect(this.normalizerWetGain);
+
+    // Route Gate -> Dry Bypass Path
+    this.gateGainNode.connect(this.normalizerDryGain);
+
     // 3. Tube Screamer Overdrive (TS9 Style Mid Boost + Bass Cut)
     this.drivePreFilter = ctx.createBiquadFilter();
     this.drivePreFilter.type = "peaking";
@@ -171,7 +261,10 @@ export class AudioEngine {
     this.driveDryWet = ctx.createGain();
     this.driveDryWet.gain.value = 1.0;
 
-    this.gateGainNode.connect(this.drivePreFilter);
+    // Normalizer (Wet or Dry) feeds the Overdrive / High-Gain Distortion stage
+    this.normalizerWetGain.connect(this.drivePreFilter);
+    this.normalizerDryGain.connect(this.drivePreFilter);
+
     this.drivePreFilter.connect(this.driveWaveshaper);
     this.driveWaveshaper.connect(this.drivePostFilter);
     this.drivePostFilter.connect(this.driveGainNode);
@@ -440,6 +533,38 @@ export class AudioEngine {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
 
+    // Signal Normalizer & Input Conditioner (Acoustic/Clean Pre-Distortion Optimization)
+    if (
+      this.normalizerWetGain &&
+      this.normalizerDryGain &&
+      this.normalizerLowCut &&
+      this.normalizerDeMud &&
+      this.normalizerHighCut &&
+      this.normalizerCompressor &&
+      this.normalizerMakeupGain
+    ) {
+      if (p.normalizerEnabled) {
+        this.normalizerWetGain.gain.setValueAtTime(1.0, now);
+        this.normalizerDryGain.gain.setValueAtTime(0.0, now);
+
+        this.normalizerLowCut.frequency.setValueAtTime(Math.max(20, Math.min(400, p.normalizerLowCut || 80)), now);
+        this.normalizerDeMud.gain.setValueAtTime(Math.max(-15, Math.min(6, p.normalizerDeMud ?? -3)), now);
+        this.normalizerHighCut.frequency.setValueAtTime(Math.max(3000, Math.min(22000, p.normalizerHighCut || 12000)), now);
+
+        this.normalizerCompressor.threshold.setValueAtTime(Math.max(-60, Math.min(0, p.normalizerThreshold ?? -18)), now);
+        this.normalizerCompressor.ratio.setValueAtTime(Math.max(1, Math.min(20, p.normalizerRatio ?? 4)), now);
+        this.normalizerCompressor.attack.setValueAtTime(Math.max(0.001, Math.min(0.1, p.normalizerAttack ?? 0.005)), now);
+        this.normalizerCompressor.release.setValueAtTime(Math.max(0.01, Math.min(1.0, p.normalizerRelease ?? 0.08)), now);
+
+        const makeupDb = p.normalizerMakeupGain ?? 3;
+        const makeupLin = Math.pow(10, makeupDb / 20);
+        this.normalizerMakeupGain.gain.setValueAtTime(makeupLin, now);
+      } else {
+        this.normalizerWetGain.gain.setValueAtTime(0.0, now);
+        this.normalizerDryGain.gain.setValueAtTime(1.0, now);
+      }
+    }
+
     // Overdrive
     if (this.drivePreFilter && this.driveWaveshaper && this.driveGainNode) {
       if (p.driveEnabled) {
@@ -650,12 +775,39 @@ export class AudioEngine {
             this.gateGainNode.gain.setTargetAtTime(1.0, this.ctx.currentTime, 0.005);
           }
         }
+        // Normalizer Gain Reduction meter
+        if (this.normalizerCompressor && this.currentParams?.normalizerEnabled) {
+          this.normalizerGainReduction = Math.abs(this.normalizerCompressor.reduction);
+        } else {
+          this.normalizerGainReduction = 0;
+        }
       }
 
       requestAnimationFrame(checkLevels);
     };
 
     requestAnimationFrame(checkLevels);
+  }
+
+  // Input & Output Time-Domain / Waveform Data retrieval
+  public getInputTimeDomainData(targetArray: Uint8Array | Float32Array): boolean {
+    if (!this.tunerAnalyser) return false;
+    if (targetArray instanceof Uint8Array) {
+      this.tunerAnalyser.getByteTimeDomainData(targetArray);
+    } else {
+      this.tunerAnalyser.getFloatTimeDomainData(targetArray);
+    }
+    return true;
+  }
+
+  public getOutputTimeDomainData(targetArray: Uint8Array | Float32Array): boolean {
+    if (!this.analyserNode) return false;
+    if (targetArray instanceof Uint8Array) {
+      this.analyserNode.getByteTimeDomainData(targetArray);
+    } else {
+      this.analyserNode.getFloatTimeDomainData(targetArray);
+    }
+    return true;
   }
 
   // Autocorrelation Tuner Pitch Detection
@@ -1031,7 +1183,7 @@ export class AudioEngine {
     const stepIntervalMs = (60000 / bpm) / 4;
     this.metronomeTimer = window.setInterval(() => {
       if (!this.isDrumPlaying) return;
-      this.triggerDrumStep(this.currentStep % 16);
+      this.triggerDrumStep(this.currentStep % 16, 1.0, this.currentBeatPattern);
       this.currentStep++;
     }, stepIntervalMs);
   }
@@ -1044,86 +1196,309 @@ export class AudioEngine {
     }
   }
 
-  private triggerDrumStep(step: number): void {
+  // --- RIFF BACKTRACKER SESSION ENGINE ---
+  // Overlays variable-speed drum loops over transposed Drop C chord progressions with metronome sync
+  private backtrackerTimer: number | null = null;
+  private backtrackerOptions: BacktrackerSessionOptions | null = null;
+  private backtrackerStepInLoop = 0;
+  private backtrackerLoopCount = 0;
+  private isBacktrackerCountIn = false;
+  private backtrackerCountInStep = 0;
+  private backtrackerCurrentBpm = 120;
+  public isBacktrackerPlaying = false;
+
+  public async startBacktracker(options: BacktrackerSessionOptions): Promise<void> {
+    await this.init();
+    this.stopBacktracker();
+    this.stopDrumMachine();
+
+    this.backtrackerOptions = { ...options };
+    this.backtrackerCurrentBpm = options.bpm;
+    this.backtrackerStepInLoop = 0;
+    this.backtrackerLoopCount = 0;
+    this.isBacktrackerPlaying = true;
+    this.isBacktrackerCountIn = options.enableCountIn ?? true;
+    this.backtrackerCountInStep = 0;
+
+    // Apply initial synth volume
+    if (this.synthBusGain) {
+      this.synthBusGain.gain.value = options.chordsVolume ?? 0.85;
+    }
+
+    this.runBacktrackerClock();
+  }
+
+  public updateBacktrackerOptions(partial: Partial<BacktrackerSessionOptions>): void {
+    if (!this.backtrackerOptions) return;
+    const oldBpm = this.backtrackerCurrentBpm;
+    this.backtrackerOptions = { ...this.backtrackerOptions, ...partial };
+    
+    if (partial.chordsVolume !== undefined && this.synthBusGain) {
+      this.synthBusGain.gain.value = partial.chordsVolume;
+    }
+
+    if (partial.bpm !== undefined && partial.bpm !== oldBpm && this.isBacktrackerPlaying) {
+      this.backtrackerCurrentBpm = partial.bpm;
+      this.runBacktrackerClock();
+    }
+  }
+
+  public stopBacktracker(): void {
+    this.isBacktrackerPlaying = false;
+    if (this.backtrackerTimer) {
+      clearInterval(this.backtrackerTimer);
+      this.backtrackerTimer = null;
+    }
+    this.isBacktrackerCountIn = false;
+  }
+
+  private runBacktrackerClock(): void {
+    if (this.backtrackerTimer) {
+      clearInterval(this.backtrackerTimer);
+      this.backtrackerTimer = null;
+    }
+    if (!this.isBacktrackerPlaying || !this.backtrackerOptions) return;
+
+    const stepIntervalMs = (60000 / this.backtrackerCurrentBpm) / 4;
+    this.backtrackerTimer = window.setInterval(() => {
+      this.tickBacktrackerStep();
+    }, stepIntervalMs);
+  }
+
+  private tickBacktrackerStep(): void {
+    if (!this.isBacktrackerPlaying || !this.backtrackerOptions) return;
+    const opts = this.backtrackerOptions;
+    const bpm = this.backtrackerCurrentBpm;
+    const chords = opts.chords && opts.chords.length > 0 ? opts.chords : [];
+
+    // Calculate total 16th steps in full chord progression
+    const totalStepsInProgression = Math.max(
+      16,
+      chords.reduce((acc, c) => acc + (c.durationBeats || 4) * 4, 0)
+    );
+
+    // 1. COUNT-IN PHASE (4 quarter beats = 16 steps)
+    if (this.isBacktrackerCountIn) {
+      const step16 = this.backtrackerCountInStep % 16;
+      const countInBeat = Math.floor(step16 / 4) + 1; // 1, 2, 3, 4
+
+      if (step16 % 4 === 0) {
+        // High click on beat 1, solid clicks on 2, 3, 4
+        this.playDrumSound("click", step16 === 0 ? 1400 : 950, (opts.clickVolume ?? 0.8) * 1.2);
+      }
+
+      opts.onStep?.({
+        step16,
+        beat: Math.floor(step16 / 4),
+        measureIndex: 0,
+        loopCount: 0,
+        chordIndex: 0,
+        currentChord: chords[0] || null,
+        nextChord: chords[1] || chords[0] || null,
+        currentBpm: bpm,
+        isCountIn: true,
+        countInBeat,
+      });
+
+      this.backtrackerCountInStep++;
+      if (this.backtrackerCountInStep >= 16) {
+        this.isBacktrackerCountIn = false;
+        this.backtrackerStepInLoop = 0;
+      }
+      return;
+    }
+
+    // 2. MAIN BACKTRACKER LOOP
+    const stepInLoop = this.backtrackerStepInLoop % totalStepsInProgression;
+    const step16 = stepInLoop % 16;
+    const beat = Math.floor(step16 / 4);
+    const measureIndex = Math.floor(stepInLoop / 16);
+
+    // Identify active chord and upcoming chord
+    let acc = 0;
+    let activeChordIdx = 0;
+    let stepWithinChord = 0;
+    for (let i = 0; i < chords.length; i++) {
+      const chordLen = (chords[i].durationBeats || 4) * 4;
+      if (stepInLoop >= acc && stepInLoop < acc + chordLen) {
+        activeChordIdx = i;
+        stepWithinChord = stepInLoop - acc;
+        break;
+      }
+      acc += chordLen;
+    }
+
+    const currentChord = chords[activeChordIdx] || null;
+    const nextChord = chords[(activeChordIdx + 1) % chords.length] || null;
+
+    // Trigger Click
+    if (opts.playClick && step16 % 4 === 0) {
+      this.playDrumSound("click", step16 === 0 ? 1200 : 800, opts.clickVolume ?? 0.7);
+    }
+
+    // Trigger Drum Beat
+    if (opts.playDrums && opts.drumPattern !== "None / Click Only") {
+      this.triggerDrumStep(step16, opts.drumsVolume ?? 0.9, opts.drumPattern);
+    }
+
+    // Trigger Drop C Rhythm Chords Synth
+    if (opts.playChords && currentChord && currentChord.fretPositions) {
+      const feel = currentChord.strumPattern || opts.strumFeel || "sustain";
+      const stepDurationSec = (60 / bpm) / 4;
+
+      if (feel === "sustain") {
+        if (stepWithinChord === 0) {
+          const durSec = Math.max(0.4, (currentChord.durationBeats || 4) * (60 / bpm) * 0.92);
+          this.playDropCVoicing(currentChord.fretPositions, currentChord.isPalmMute || false, durSec);
+        }
+      } else if (feel === "chug8ths") {
+        if (stepWithinChord % 2 === 0) {
+          this.playDropCVoicing(currentChord.fretPositions, true, stepDurationSec * 1.6);
+        }
+      } else if (feel === "chug16ths") {
+        this.playDropCVoicing(currentChord.fretPositions, true, stepDurationSec * 0.85);
+      } else if (feel === "gallop") {
+        // Gallop 16th pattern: Down-Down-Up
+        const gallopSteps = [0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15];
+        if (gallopSteps.includes(step16)) {
+          const isAccent = step16 === 0 || step16 === 4 || step16 === 8 || step16 === 12;
+          this.playDropCVoicing(currentChord.fretPositions, !isAccent, isAccent ? 0.25 : 0.12);
+        }
+      } else if (feel === "syncopated") {
+        // Djent syncopated heavy accents
+        const syncopatedSteps = [0, 3, 6, 10, 12, 14];
+        if (syncopatedSteps.includes(step16)) {
+          this.playDropCVoicing(currentChord.fretPositions, step16 !== 0 && step16 !== 12, 0.22);
+        }
+      }
+    }
+
+    // Notify UI Step Callback
+    opts.onStep?.({
+      step16,
+      beat,
+      measureIndex,
+      loopCount: this.backtrackerLoopCount,
+      chordIndex: activeChordIdx,
+      currentChord,
+      nextChord,
+      currentBpm: bpm,
+      isCountIn: false,
+      countInBeat: 0,
+    });
+
+    // Advance Step & Handle Progression Wrap
+    this.backtrackerStepInLoop++;
+    if (this.backtrackerStepInLoop >= totalStepsInProgression) {
+      this.backtrackerStepInLoop = 0;
+      this.backtrackerLoopCount++;
+
+      // Auto Speed Trainer (Dynamic BPM Accelerator)
+      if (opts.autoSpeedTrainer) {
+        const intervalLoops = opts.speedTrainerIntervalLoops || 2;
+        const increment = opts.speedTrainerIncrement || 2;
+        if (this.backtrackerLoopCount % intervalLoops === 0) {
+          this.backtrackerCurrentBpm = Math.min(280, this.backtrackerCurrentBpm + increment);
+          this.runBacktrackerClock();
+        }
+      }
+
+      opts.onLoopCompleted?.(this.backtrackerLoopCount, this.backtrackerCurrentBpm);
+
+      if (opts.loopMode === "single_pass") {
+        this.stopBacktracker();
+      }
+    }
+  }
+
+  private triggerDrumStep(step: number, volume = 1.0, overridePattern?: DrumBeatPattern): void {
     if (!this.ctx) return;
-    const pattern = this.currentBeatPattern;
+    const pattern = overridePattern || this.currentBeatPattern;
 
     // 1. Click Metronome only
     if (pattern === "None / Click Only") {
-      if (step % 4 === 0) this.playDrumSound("click", step === 0 ? 1200 : 800);
+      if (step % 4 === 0) this.playDrumSound("click", step === 0 ? 1200 : 800, volume);
       return;
     }
 
     // 2. 0-0-0 Breakdown Heavy (Half-time, massive china cymbal on beats, double kick syncopation)
     if (pattern === "0-0-0 Breakdown Heavy") {
       // China cymbal on quarter notes
-      if (step % 4 === 0) this.playDrumSound("china");
+      if (step % 4 === 0) this.playDrumSound("china", 1000, volume);
       // Snare on beat 3 (step 8 in half-time)
-      if (step === 8) this.playDrumSound("snare");
+      if (step === 8) this.playDrumSound("snare", 1000, volume);
       // Heavy double kicks (0-0-0 breakdown syncopation)
       if (step === 0 || step === 2 || step === 3 || step === 6 || step === 10 || step === 12 || step === 14) {
-        this.playDrumSound("kick");
+        this.playDrumSound("kick", 1000, volume);
       }
-      if (step % 2 === 0) this.playDrumSound("hihat");
+      if (step % 2 === 0) this.playDrumSound("hihat", 1000, volume * 0.7);
     }
 
     // 3. Double Bass Gallop (Thrash Metal 16th note double bass)
     else if (pattern === "Double Bass Gallop (Thrash)") {
-      this.playDrumSound("kick"); // Non-stop double bass
-      if (step === 4 || step === 12) this.playDrumSound("snare");
-      if (step % 2 === 0) this.playDrumSound("ride");
+      this.playDrumSound("kick", 1000, volume); // Non-stop double bass
+      if (step === 4 || step === 12) this.playDrumSound("snare", 1000, volume);
+      if (step % 2 === 0) this.playDrumSound("ride", 1000, volume * 0.8);
     }
 
     // 4. Blast Beat (Death/Black Metal)
     else if (pattern === "Blast Beat (Death/Black)") {
       if (step % 2 === 0) {
-        this.playDrumSound("kick");
-        this.playDrumSound("snare");
-        this.playDrumSound("hihat");
+        this.playDrumSound("kick", 1000, volume);
+        this.playDrumSound("snare", 1000, volume);
+        this.playDrumSound("hihat", 1000, volume * 0.9);
       } else {
-        this.playDrumSound("kick");
+        this.playDrumSound("kick", 1000, volume);
       }
     }
 
     // 5. Half-Time Groove (Metalcore)
     else if (pattern === "Half-Time Groove (Metalcore)") {
-      if (step === 0 || step === 6 || step === 10) this.playDrumSound("kick");
-      if (step === 8) this.playDrumSound("snare");
-      if (step % 2 === 0) this.playDrumSound("hihat");
+      if (step === 0 || step === 6 || step === 10) this.playDrumSound("kick", 1000, volume);
+      if (step === 8) this.playDrumSound("snare", 1000, volume);
+      if (step % 2 === 0) this.playDrumSound("hihat", 1000, volume * 0.8);
     }
 
     // 6. Djent Polyrhythm (7/8 & 4/4)
     else if (pattern === "Djent Polyrhythm (7/8 & 4/4)") {
       if (step === 0 || step === 3 || step === 6 || step === 9 || step === 11 || step === 14) {
-        this.playDrumSound("kick");
+        this.playDrumSound("kick", 1000, volume);
       }
-      if (step === 4 || step === 12) this.playDrumSound("snare");
-      if (step % 2 === 0) this.playDrumSound("ride");
+      if (step === 4 || step === 12) this.playDrumSound("snare", 1000, volume);
+      if (step % 2 === 0) this.playDrumSound("ride", 1000, volume * 0.8);
     }
 
-    // 7. Slow Sludge Doom
+    // 7. Classic 4/4 Hard Rock
+    else if (pattern === "Classic 4/4 Hard Rock") {
+      if (step === 0 || step === 8 || step === 10) this.playDrumSound("kick", 1000, volume);
+      if (step === 4 || step === 12) this.playDrumSound("snare", 1000, volume);
+      if (step % 2 === 0) this.playDrumSound("hihat", 1000, volume * 0.75);
+    }
+
+    // 8. Slow Sludge Doom
     else if (pattern === "Slow Sludge Doom (60 BPM)") {
       if (step === 0) {
-        this.playDrumSound("kick");
-        this.playDrumSound("china");
+        this.playDrumSound("kick", 1000, volume);
+        this.playDrumSound("china", 1000, volume);
       }
-      if (step === 8) this.playDrumSound("snare");
-      if (step % 4 === 0) this.playDrumSound("hihat");
+      if (step === 8) this.playDrumSound("snare", 1000, volume);
+      if (step % 4 === 0) this.playDrumSound("hihat", 1000, volume * 0.7);
     }
   }
 
-  // Procedural Metal Drum Sound Generators
-  private playDrumSound(type: "kick" | "snare" | "hihat" | "ride" | "china" | "click", freq = 1000): void {
+  // Procedural Metal Drum Sound Generators with volume control
+  private playDrumSound(type: "kick" | "snare" | "hihat" | "ride" | "china" | "click", freq = 1000, volume = 1.0): void {
     if (!this.ctx) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
+    const vol = Math.max(0, Math.min(2.0, volume));
 
     if (type === "kick") {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.frequency.setValueAtTime(140, now);
       osc.frequency.exponentialRampToValueAtTime(38, now + 0.12);
-      gain.gain.setValueAtTime(1.0, now);
+      gain.gain.setValueAtTime(1.0 * vol, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
       osc.connect(gain);
       gain.connect(this.masterLimiter || ctx.destination);
@@ -1136,7 +1511,7 @@ export class AudioEngine {
       osc.type = "triangle";
       osc.frequency.setValueAtTime(220, now);
       osc.frequency.exponentialRampToValueAtTime(120, now + 0.08);
-      oscGain.gain.setValueAtTime(0.8, now);
+      oscGain.gain.setValueAtTime(0.8 * vol, now);
       oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
       osc.connect(oscGain);
       oscGain.connect(this.masterLimiter || ctx.destination);
@@ -1154,7 +1529,7 @@ export class AudioEngine {
       noiseFilter.type = "highpass";
       noiseFilter.frequency.value = 1000;
       const noiseGain = ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.9, now);
+      noiseGain.gain.setValueAtTime(0.9 * vol, now);
       noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
       whiteNoise.connect(noiseFilter);
       noiseFilter.connect(noiseGain);
@@ -1175,7 +1550,8 @@ export class AudioEngine {
       noiseFilter.Q.value = type === "china" ? 1.5 : 3.0;
 
       const noiseGain = ctx.createGain();
-      noiseGain.gain.setValueAtTime(type === "china" ? 0.9 : 0.45, now);
+      const peak = type === "china" ? 0.9 : 0.45;
+      noiseGain.gain.setValueAtTime(peak * vol, now);
       noiseGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
       whiteNoise.connect(noiseFilter);
       noiseFilter.connect(noiseGain);
@@ -1187,7 +1563,7 @@ export class AudioEngine {
       const gain = ctx.createGain();
       osc.type = "sine";
       osc.frequency.setValueAtTime(freq, now);
-      gain.gain.setValueAtTime(0.7, now);
+      gain.gain.setValueAtTime(0.7 * vol, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
       osc.connect(gain);
       gain.connect(this.masterLimiter || ctx.destination);

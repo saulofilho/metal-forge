@@ -8,6 +8,9 @@ import { ChordVoicing, MetalSubgenre, TransposedSongData } from "../types";
 import { DropCFretboard } from "./DropCFretboard";
 import { RiffScraper } from "./RiffScraper";
 import { StyleConverter } from "./StyleConverter";
+import { RiffLibrary } from "./RiffLibrary";
+import { RiffBacktracker } from "./RiffBacktracker";
+import { RiffLibraryStorage } from "../audio/riffLibraryStorage";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Zap,
@@ -24,9 +27,13 @@ import {
   Flame,
   Layers,
   Wand2,
+  BookmarkPlus,
+  BookmarkCheck,
+  Bookmark,
+  Headphones,
 } from "lucide-react";
 
-type TransposerSubModule = "scraper" | "style-converter" | "transposer" | "fretboard";
+type TransposerSubModule = "scraper" | "style-converter" | "transposer" | "backtracker" | "library" | "fretboard";
 
 interface TransposerStudioProps {
   onNavigateToAmp?: () => void;
@@ -44,6 +51,7 @@ export const TransposerStudio: React.FC<TransposerStudioProps> = ({ onNavigateTo
   const [selectedChord, setSelectedChord] = useState<ChordVoicing>(DROP_C_POWER_CHORDS[0]);
   const [playingSectionIndex, setPlayingSectionIndex] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  const [savedToVault, setSavedToVault] = useState(false);
   const [semitoneShift, setSemitoneShift] = useState(0);
 
   const audioEngine = AudioEngine.getInstance();
@@ -54,6 +62,32 @@ export const TransposerStudio: React.FC<TransposerStudioProps> = ({ onNavigateTo
     setArtist(preset.artist);
     setRawText(preset.inputChords);
     setSubgenre(preset.metalSubgenre as MetalSubgenre);
+  };
+
+  const handleSaveTransposedToVault = () => {
+    if (!transposedData) return;
+    const storage = RiffLibraryStorage.getInstance();
+    storage.saveRiff({
+      title: `${songTitle || "Custom Track"} (${subgenre})`,
+      originalArtist: artist || "Custom",
+      subgenre: subgenre,
+      metalKey: transposedData.metalKey,
+      bpm: transposedData.bpm,
+      tuning: transposedData.tuning || "Drop C (C-G-C-F-A-D)",
+      sourceType: "manual",
+      tags: [artist || "Custom", subgenre, "Drop C Transposed"],
+      isFavorite: true,
+      userNotes: transposedData.styleDescription,
+      sections: transposedData.sections.map((s) => ({
+        name: s.name,
+        originalChords: s.originalChords,
+        metalChords: s.metalChords,
+        technique: s.technique,
+        tab: s.tab,
+      })),
+    });
+    setSavedToVault(true);
+    setTimeout(() => setSavedToVault(false), 3000);
   };
 
   // Transpose song into Drop C Metal
@@ -195,6 +229,35 @@ ${transposedData.dropCFretboardTips.map((t) => "- " + t).join("\n")}`;
           >
             <Wand2 className="w-4 h-4" />
             <span>Manual Chord Transposer</span>
+          </button>
+
+          <button
+            id="tab-btn-riff-backtracker"
+            onClick={() => setActiveModule("backtracker")}
+            className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeModule === "backtracker"
+                ? "bg-red-600 text-white shadow-lg shadow-red-600/30 font-extrabold"
+                : "text-gray-400 hover:text-gray-200 hover:bg-[#1D1D21]"
+            }`}
+          >
+            <Headphones className="w-4 h-4 text-red-400" />
+            <span>Riff Backtracker</span>
+            <span className="px-1.5 py-0.2 rounded text-[9px] bg-red-950 text-red-300 border border-red-800">
+              DRUM SYNC
+            </span>
+          </button>
+
+          <button
+            id="tab-btn-riff-library"
+            onClick={() => setActiveModule("library")}
+            className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeModule === "library"
+                ? "bg-[#CCFF00] text-black shadow-lg shadow-[rgba(204,255,0,0.2)]"
+                : "text-gray-400 hover:text-gray-200 hover:bg-[#1D1D21]"
+            }`}
+          >
+            <Bookmark className="w-4 h-4 fill-current" />
+            <span>Riff Library (Saved Vault)</span>
           </button>
 
           <button
@@ -436,6 +499,28 @@ ${transposedData.dropCFretboardTips.map((t) => "- " + t).join("\n")}`;
                   </div>
 
                   <button
+                    id="btn-save-transposed-vault"
+                    onClick={handleSaveTransposedToVault}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all border cursor-pointer ${
+                      savedToVault
+                        ? "bg-emerald-950/80 text-emerald-400 border-emerald-700 shadow-md shadow-emerald-500/20"
+                        : "bg-[#1D1D21] hover:bg-[#25252b] text-gray-200 hover:text-white border-[#333338]"
+                    }`}
+                  >
+                    {savedToVault ? (
+                      <>
+                        <BookmarkCheck className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Saved!</span>
+                      </>
+                    ) : (
+                      <>
+                        <BookmarkPlus className="w-3.5 h-3.5 text-[#CCFF00]" />
+                        <span>Save to Vault</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
                     onClick={handleCopyChart}
                     className="px-3 py-1.5 rounded-lg bg-[#1D1D21] hover:bg-[#25252b] text-gray-200 text-xs font-mono font-bold flex items-center gap-1.5 transition-all border border-[#333338] cursor-pointer"
                   >
@@ -457,24 +542,37 @@ ${transposedData.dropCFretboardTips.map((t) => "- " + t).join("\n")}`;
                         <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#CCFF00] flex items-center gap-1.5">
                           <Zap className="w-3.5 h-3.5 fill-current" /> {sec.name}
                         </span>
-                        <button
-                          onClick={() => handlePlaySectionTab(idx)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                            playingSectionIndex === idx
-                              ? "bg-red-500 text-white animate-pulse"
-                              : "bg-[#1D1D21] hover:bg-[#CCFF00] hover:text-black text-gray-300 border border-[#333338]"
-                          }`}
-                        >
-                          {playingSectionIndex === idx ? (
-                            <>
-                              <Square className="w-3 h-3 fill-current" /> Stop
-                            </>
-                          ) : (
-                            <>
-                              <Play className="w-3 h-3 fill-current" /> Play Riff
-                            </>
-                          )}
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setActiveModule("backtracker");
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1 bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-800 transition-all cursor-pointer"
+                            title="Practice this section with drums and metronome in Riff Backtracker"
+                          >
+                            <Headphones className="w-3 h-3 text-red-400" />
+                            <span>Backtracker Jam</span>
+                          </button>
+
+                          <button
+                            onClick={() => handlePlaySectionTab(idx)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                              playingSectionIndex === idx
+                                ? "bg-red-500 text-white animate-pulse"
+                                : "bg-[#1D1D21] hover:bg-[#CCFF00] hover:text-black text-gray-300 border border-[#333338]"
+                            }`}
+                          >
+                            {playingSectionIndex === idx ? (
+                              <>
+                                <Square className="w-3 h-3 fill-current" /> Stop
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-3 h-3 fill-current" /> Play Riff
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
 
                       <div className="mt-2 text-xs space-y-1">
@@ -518,7 +616,32 @@ ${transposedData.dropCFretboardTips.map((t) => "- " + t).join("\n")}`;
         </div>
       )}
 
-      {/* Module 4 (or shared bottom): Interactive Fretboard Visualizer & Voicing Library */}
+      {/* Module: Riff Backtracker (Variable-Speed Drum Practice Over Drop C Chords) */}
+      {activeModule === "backtracker" && (
+        <RiffBacktracker
+          transposedData={transposedData}
+          songTitle={songTitle}
+          artist={artist}
+          onNavigateToAmp={onNavigateToAmp}
+        />
+      )}
+
+      {/* Module 4: Riff Library & Vault */}
+      {activeModule === "library" && (
+        <RiffLibrary
+          onLoadAmpPreset={onLoadAmpPreset}
+          onNavigateToAmp={onNavigateToAmp}
+          onLoadInTransposer={(title, art, chords, subg) => {
+            setSongTitle(title);
+            setArtist(art);
+            setRawText(chords);
+            setSubgenre(subg);
+            setActiveModule("transposer");
+          }}
+        />
+      )}
+
+      {/* Module 5 (or shared bottom): Interactive Fretboard Visualizer & Voicing Library */}
       {(activeModule === "fretboard" || activeModule === "transposer") && (
         <div className="space-y-6">
           <DropCFretboard

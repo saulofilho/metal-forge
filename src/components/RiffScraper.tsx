@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { AudioEngine } from "../audio/audioEngine";
 import { ScrapedSongResult, TransposedSongData, MetalSubgenre } from "../types";
+import { RiffLibraryStorage } from "../audio/riffLibraryStorage";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Search,
@@ -19,6 +20,8 @@ import {
   ShieldCheck,
   Layers,
   Flame,
+  BookmarkPlus,
+  BookmarkCheck,
 } from "lucide-react";
 
 interface RiffScraperProps {
@@ -185,6 +188,37 @@ ${s.tab}`
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const [savedToVault, setSavedToVault] = useState(false);
+
+  const handleSaveToVault = () => {
+    if (!scrapedData || !scrapedData.transposedDropC) return;
+    const storage = RiffLibraryStorage.getInstance();
+    const trans = scrapedData.transposedDropC;
+    storage.saveRiff({
+      title: `${scrapedData.songTitle} (${targetSubgenre})`,
+      originalArtist: scrapedData.artist,
+      subgenre: targetSubgenre,
+      originalKey: scrapedData.originalKey,
+      metalKey: trans.metalKey,
+      bpm: trans.bpm || scrapedData.originalBpm,
+      tuning: "Drop C (C-G-C-F-A-D)",
+      sourceType: "scraped",
+      sourceUrl: scrapedData.url,
+      tags: [scrapedData.artist, targetSubgenre, "Scraped Tab", "Drop C"],
+      isFavorite: true,
+      userNotes: trans.styleDescription || `Scraped from ${scrapedData.source}`,
+      sections: trans.sections.map((s) => ({
+        name: s.name,
+        originalChords: s.originalChords,
+        metalChords: s.metalChords,
+        technique: s.technique,
+        tab: s.tab,
+      })),
+    });
+    setSavedToVault(true);
+    setTimeout(() => setSavedToVault(false), 3000);
+  };
+
   return (
     <div id="riff-scraper-module" className="space-y-6">
       {/* Scraper Search & URL Input Bento Box */}
@@ -334,6 +368,28 @@ ${s.tab}`
                     <Zap className="w-3 h-3 fill-current" /> Drop C Metal Tab
                   </button>
                 </div>
+
+                <button
+                  id="btn-save-scraped-to-vault"
+                  onClick={handleSaveToVault}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                    savedToVault
+                      ? "bg-emerald-950/80 text-emerald-400 border-emerald-700 shadow-md shadow-emerald-500/20"
+                      : "bg-[#1D1D21] hover:bg-[#25252b] text-gray-200 hover:text-white border-[#333338]"
+                  }`}
+                >
+                  {savedToVault ? (
+                    <>
+                      <BookmarkCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Saved to Vault!</span>
+                    </>
+                  ) : (
+                    <>
+                      <BookmarkPlus className="w-3.5 h-3.5 text-[#CCFF00]" />
+                      <span>Save to Riff Vault</span>
+                    </>
+                  )}
+                </button>
 
                 <button
                   onClick={handleCopyTransposedTab}
