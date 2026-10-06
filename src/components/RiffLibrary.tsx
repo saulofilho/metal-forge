@@ -35,6 +35,7 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
+  Link2,
 } from "lucide-react";
 
 interface RiffLibraryProps {
@@ -563,6 +564,20 @@ ${s.tab}`
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#0A0A0B] text-gray-400 border border-[#222226]">
                       {riff.bpm} BPM
                     </span>
+
+                    {riff.sourceUrl && (
+                      <a
+                        href={riff.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#0A0A0B] text-gray-400 hover:text-[#CCFF00] border border-[#222226] flex items-center gap-1 transition-colors"
+                        title={`Tab URL: ${riff.sourceUrl}`}
+                      >
+                        <Link2 className="w-2.5 h-2.5 text-[#CCFF00]" />
+                        <span>Tab URL</span>
+                      </a>
+                    )}
                   </div>
 
                   {/* Primary Chord Snapshot */}

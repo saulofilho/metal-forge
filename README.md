@@ -68,18 +68,21 @@ Acesse [http://localhost:3000](http://localhost:3000) no seu navegador. Conecte 
 
 O projeto já está 100% configurado para rodar no **GitHub Pages** com caminhos relativos de assets (`base: './'`) e workflow automático de CI/CD.
 
-### Opção 1: Deploy Automático via GitHub Actions (Recomendado)
+### Opção 1: Deploy via GitHub Actions (Recomendado)
 1. Faça o push do código para o repositório no GitHub (`main` ou `master`).
-2. Acesse a aba **Settings** > **Pages** do seu repositório.
-3. Em **Source**, selecione **GitHub Actions**.
-4. O workflow configurado em `.github/workflows/deploy.yml` fará o build e publicação automáticos a cada push!
+2. Acesse a aba **Settings** > **Pages** do seu repositório no GitHub.
+3. Em **Build and deployment** > **Source**, selecione **GitHub Actions**.
+4. O workflow configurado em `.github/workflows/deploy.yml` fará o build do Vite e publicação automáticos a cada push, sem passar pelo Jekyll!
 
-### Opção 2: Build Manual
-Execute o comando de build configurado para páginas estáticas:
+### Opção 2: Deploy a partir da Branch (Deploy from a branch /docs)
+Se a configuração do seu repositório estiver em **Source: Deploy from a branch**:
+1. Branch: `main` (ou `master`), Pasta: `/docs`.
+2. O repositório já inclui a pasta `/docs` com `.nojekyll` e `_config.yml`, evitando o erro `actions/jekyll-build-pages (No such file or directory @ dir_chdir0 - /github/workspace/docs)`.
+3. Para atualizar a pasta `/docs` localmente antes de um push:
 ```bash
 npm run build:gh-pages
 ```
-A pasta gerada `dist/` conterá todo o Single Page Application estático pronto para ser hospedado no GitHub Pages, Vercel, Netlify ou Cloudflare Pages.
+Isso compilará o Vite para `dist/` e sincronizará automaticamente para `docs/` com `.nojekyll`.
 
 ---
 

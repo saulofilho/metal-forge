@@ -22,6 +22,7 @@ import {
   Flame,
   BookmarkPlus,
   BookmarkCheck,
+  Link2,
 } from "lucide-react";
 
 interface RiffScraperProps {
@@ -262,13 +263,15 @@ ${s.tab}`
         <div className="mt-4 space-y-3">
           <div className="flex flex-col sm:flex-row items-center gap-2.5">
             <div className="relative flex-1 w-full">
-              <Search className="w-4 h-4 text-gray-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-[#CCFF00] pointer-events-none">
+                <Link2 className="w-4 h-4" />
+              </div>
               <input
                 id="riff-scraper-url-input"
                 type="url"
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
-                placeholder="Paste tab URL e.g. https://tabs.ultimate-guitar.com/tab/radiohead/decks-dark-official-4270984"
+                placeholder="Paste song tab URL / path e.g. https://tabs.ultimate-guitar.com/tab/radiohead/decks-dark-official-4270984"
                 className="w-full bg-[#0A0A0B] border border-[#222226] rounded-xl pl-10 pr-4 py-3 text-xs sm:text-sm text-gray-100 font-mono focus:border-[#CCFF00] outline-none"
               />
             </div>
@@ -295,7 +298,7 @@ ${s.tab}`
           {/* Quick Preset URLs */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs scrollbar-none pt-1">
             <span className="text-[10px] font-mono text-gray-500 uppercase tracking-widest whitespace-nowrap flex items-center gap-1 font-bold">
-              <Zap className="w-3 h-3 text-[#CCFF00]" /> 1-Click Tab Demos:
+              <Link2 className="w-3.5 h-3.5 text-[#CCFF00]" /> Tab URL Presets:
             </span>
             {SAMPLE_SCRAPER_URLS.map((sample) => (
               <button
@@ -304,6 +307,7 @@ ${s.tab}`
                 onClick={() => handleSelectSample(sample)}
                 className="px-2.5 py-1 rounded-lg bg-[#1D1D21] hover:bg-[#25252b] hover:border-[#CCFF00] text-gray-300 border border-[#333338] font-mono text-[11px] whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer"
               >
+                <Link2 className="w-3 h-3 text-[#CCFF00]/80 shrink-0" />
                 <span className="font-bold text-gray-200">{sample.title}</span>
                 <span className="text-[10px] text-gray-400">({sample.artist})</span>
               </button>
@@ -338,9 +342,10 @@ ${s.tab}`
                 </div>
 
                 {/* URL preview */}
-                <div className="flex items-center gap-1.5 text-xs text-gray-500 font-mono mt-1.5 truncate max-w-xl">
-                  <ExternalLink className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
+                <div className="flex items-center gap-1.5 text-xs text-gray-400 font-mono mt-1.5 truncate max-w-xl">
+                  <Link2 className="w-3.5 h-3.5 flex-shrink-0 text-[#CCFF00]" />
                   <span className="truncate">{scrapedData.url}</span>
+                  <ExternalLink className="w-3 h-3 flex-shrink-0 text-gray-500" />
                 </div>
               </div>
 

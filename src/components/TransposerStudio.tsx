@@ -31,6 +31,7 @@ import {
   BookmarkCheck,
   Bookmark,
   Headphones,
+  Link2,
 } from "lucide-react";
 
 type TransposerSubModule = "scraper" | "style-converter" | "transposer" | "backtracker" | "library" | "fretboard";
@@ -201,7 +202,7 @@ ${transposedData.dropCFretboardTips.map((t) => "- " + t).join("\n")}`;
                 : "text-gray-400 hover:text-gray-200 hover:bg-[#1D1D21]"
             }`}
           >
-            <Globe className="w-4 h-4" />
+            <Link2 className="w-4 h-4" />
             <span>Riff Scraper (URL to Drop C)</span>
           </button>
 

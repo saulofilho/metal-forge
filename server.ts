@@ -25,6 +25,59 @@ function getGeminiClient(): GoogleGenAI | null {
   });
 }
 
+// Resilient Gemini JSON Content Generator with Automatic Model Fallback & Exponential Retry
+async function generateJsonWithGemini(prompt: string): Promise<any | null> {
+  const ai = getGeminiClient();
+  if (!ai) return null;
+
+  const candidateModels = ["gemini-3.7-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+
+  for (const modelName of candidateModels) {
+    // Attempt up to 2 tries per model for transient 503 / 429 spikes
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+          },
+        });
+
+        const text = response.text;
+        if (text) {
+          const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/\s*```$/i, "");
+          const parsed = JSON.parse(cleaned);
+          return parsed;
+        }
+      } catch (err: any) {
+        const errorMsg = err?.message || String(err);
+        const isTransient =
+          errorMsg.includes("503") ||
+          errorMsg.includes("UNAVAILABLE") ||
+          errorMsg.includes("high demand") ||
+          errorMsg.includes("429") ||
+          errorMsg.includes("RESOURCE_EXHAUSTED");
+
+        console.warn(
+          `[Gemini AI] Model ${modelName} attempt ${attempt + 1} failed: ${errorMsg.slice(0, 120)}...`
+        );
+
+        if (isTransient && attempt === 0) {
+          // Short delay before single retry
+          await new Promise((r) => setTimeout(r, 600));
+          continue;
+        }
+
+        // If non-transient or retry exhausted, break to next candidate model
+        break;
+      }
+    }
+  }
+
+  return null;
+}
+
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -114,10 +167,7 @@ app.post("/api/scrape-song-url", async (req, res) => {
 
     const { title: guessedTitle, artist: guessedArtist, source } = parseTabUrlMetadata(url);
 
-    const ai = getGeminiClient();
-
-    if (ai) {
-      const prompt = `You are a music transcription, chord analysis, and heavy metal scraping expert.
+    const prompt = `You are a music transcription, chord analysis, and heavy metal scraping expert.
 A user provided the following music/tab URL: "${url}" (identified as: Artist: "${guessedArtist}", Song: "${guessedTitle}", Source: "${source}").
 
 Extract or reconstruct the full accurate chord progression, musical key, tempo (BPM), and section breakdown (Intro, Verse, Chorus, Bridge, Solo/Breakdown, Outro) for this song.
@@ -189,31 +239,19 @@ Respond ONLY with a valid JSON object matching this exact schema:
   }
 }`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.7-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-        },
-      });
-
-      const text = response.text;
-      if (text) {
-        try {
-          const parsed = JSON.parse(text.trim());
-          return res.json({ success: true, data: parsed });
-        } catch (e) {
-          console.error("JSON parse error from Gemini Scraper:", e);
-        }
-      }
+    const aiResult = await generateJsonWithGemini(prompt);
+    if (aiResult && aiResult.sections && aiResult.sections.length > 0) {
+      return res.json({ success: true, data: aiResult, engine: "ai" });
     }
 
     // Algorithmic Fallback Scraper Engine
     const fallbackScraped = generateAlgorithmicScrape(url, guessedTitle, guessedArtist, source, targetTuning);
-    return res.json({ success: true, data: fallbackScraped, note: "Generated via DropC Deep Scraper Engine" });
+    return res.json({ success: true, data: fallbackScraped, engine: "algorithmic" });
   } catch (error: any) {
-    console.error("Scraper API error:", error);
-    return res.status(500).json({ error: error.message || "Failed to scrape song chord progression" });
+    console.error("Scraper API error caught:", error);
+    const { title: guessedTitle, artist: guessedArtist, source } = parseTabUrlMetadata(req.body?.url || "Song");
+    const fallbackScraped = generateAlgorithmicScrape(req.body?.url || "", guessedTitle, guessedArtist, source, "Drop C (C-G-C-F-A-D)");
+    return res.json({ success: true, data: fallbackScraped, engine: "algorithmic-fallback" });
   }
 });
 
@@ -235,10 +273,7 @@ app.post("/api/style-convert", async (req, res) => {
     const effTitle = songTitle || urlTitle || "Song";
     const effArtist = artist || urlArtist || "Original Artist";
 
-    const ai = getGeminiClient();
-
-    if (ai) {
-      const prompt = `You are a world-class Heavy Metal producer, arranger, and Drop C guitarist (like Mick Gordon, Colin Richardson, Adam D, Misha Mansoor).
+    const prompt = `You are a world-class Heavy Metal producer, arranger, and Drop C guitarist (like Mick Gordon, Colin Richardson, Adam D, Misha Mansoor).
 Take this song: "${effTitle}" by "${effArtist}" (Original Genre: ${originalGenre || "Pop/Acoustic/Rock"}) with input:
 """
 ${rawTabOrUrl || effTitle}
@@ -334,31 +369,23 @@ Respond ONLY with a valid JSON object matching this schema:
   ]
 }`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.7-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-        },
-      });
-
-      const text = response.text;
-      if (text) {
-        try {
-          const parsed = JSON.parse(text.trim());
-          return res.json({ success: true, data: parsed });
-        } catch (e) {
-          console.error("JSON parse error from Gemini Style Converter:", e);
-        }
-      }
+    const aiResult = await generateJsonWithGemini(prompt);
+    if (aiResult && aiResult.sections && aiResult.sections.length > 0) {
+      return res.json({ success: true, data: aiResult, engine: "ai" });
     }
 
     // Fallback Algorithmic Style Conversion
     const fallbackResult = generateAlgorithmicStyleConversion(effTitle, effArtist, originalGenre, targetMetalSubgenre);
-    return res.json({ success: true, data: fallbackResult, note: "Generated via DropC Heavy Metal Harmonizer" });
+    return res.json({ success: true, data: fallbackResult, engine: "algorithmic" });
   } catch (error: any) {
-    console.error("Style Converter API error:", error);
-    return res.status(500).json({ error: error.message || "Failed to convert song style to metal" });
+    console.error("Style Converter API error caught:", error);
+    const fallbackResult = generateAlgorithmicStyleConversion(
+      req.body?.songTitle || "Song",
+      req.body?.artist || "Artist",
+      req.body?.originalGenre || "Pop",
+      req.body?.targetMetalSubgenre || "Metalcore"
+    );
+    return res.json({ success: true, data: fallbackResult, engine: "algorithmic-fallback" });
   }
 });
 
@@ -373,10 +400,7 @@ app.post("/api/metal-transcode", async (req, res) => {
       return res.status(400).json({ error: "Please provide a song title or chord sheet/lyrics" });
     }
 
-    const ai = getGeminiClient();
-
-    if (ai) {
-      const prompt = `You are a master heavy metal guitarist, producer, and music theorist specializing in Drop C tuning (C-G-C-F-A-D) and aggressive modern metal genres (Metalcore, Djent, Thrash, Doom, Swedish Death Metal, Prog Metal).
+    const prompt = `You are a master heavy metal guitarist, producer, and music theorist specializing in Drop C tuning (C-G-C-F-A-D) and aggressive modern metal genres (Metalcore, Djent, Thrash, Doom, Swedish Death Metal, Prog Metal).
 
 Transform the following song or chord progression into a crushing, heavy ${metalSubgenre || "Modern Metalcore / Drop C"} arrangement.
 
@@ -413,31 +437,18 @@ Respond ONLY with a valid JSON object matching this schema:
   "recommendedAmpPreset": "5150 High-Gain Chug"
 }`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.7-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-        },
-      });
-
-      const text = response.text;
-      if (text) {
-        try {
-          const parsed = JSON.parse(text.trim());
-          return res.json({ success: true, data: parsed });
-        } catch (e) {
-          console.error("JSON parse error from Gemini:", e);
-        }
-      }
+    const aiResult = await generateJsonWithGemini(prompt);
+    if (aiResult && aiResult.sections && aiResult.sections.length > 0) {
+      return res.json({ success: true, data: aiResult, engine: "ai" });
     }
 
     // Algorithmic Fallback
     const fallbackData = generateAlgorithmicMetalTransposition(songTitle, rawText, metalSubgenre);
-    return res.json({ success: true, data: fallbackData, note: "Generated via Drop-C Harmonizer Engine" });
+    return res.json({ success: true, data: fallbackData, engine: "algorithmic" });
   } catch (error: any) {
-    console.error("Transcode API error:", error);
-    return res.status(500).json({ error: error.message || "Failed to transpose song to metal" });
+    console.error("Transcode API error caught:", error);
+    const fallbackData = generateAlgorithmicMetalTransposition(req.body?.songTitle || "Song", req.body?.rawText || "", req.body?.metalSubgenre || "Metalcore");
+    return res.json({ success: true, data: fallbackData, engine: "algorithmic-fallback" });
   }
 });
 

@@ -24,6 +24,7 @@ import {
   Wand2,
   BookmarkPlus,
   BookmarkCheck,
+  Link2,
 } from "lucide-react";
 
 interface StyleConverterProps {
@@ -319,6 +320,7 @@ Recommended Rig: ${convertedData.recommendedRig.name} (${convertedData.recommend
               onClick={() => handleSelectPreset(preset)}
               className="px-2.5 py-1 rounded-lg bg-[#1D1D21] hover:bg-[#25252b] hover:border-[#CCFF00] text-gray-300 border border-[#333338] font-mono text-[11px] whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer"
             >
+              <Link2 className="w-3 h-3 text-[#CCFF00]/80 shrink-0" />
               <span className="font-bold text-gray-200">{preset.title}</span>
               <span className="text-[10px] text-gray-400">({preset.artist})</span>
               <span className="text-[9px] px-1 py-0.2 rounded bg-[#0A0A0B] text-[#CCFF00] font-bold">
@@ -381,9 +383,13 @@ Recommended Rig: ${convertedData.recommendedRig.name} (${convertedData.recommend
 
           <div className="md:col-span-8 flex flex-col">
             <label className="block text-[10px] font-mono font-bold uppercase tracking-widest text-gray-500 mb-1 flex items-center justify-between">
-              <span>Tab URL or Raw Chords Input</span>
-              <span className="text-[10px] text-[#CCFF00] font-normal font-mono">
-                Accepts Ultimate-Guitar URLs or chord text
+              <span className="flex items-center gap-1.5 text-gray-300">
+                <Link2 className="w-3.5 h-3.5 text-[#CCFF00]" />
+                Tab URL or Raw Chords Input
+              </span>
+              <span className="text-[10px] text-[#CCFF00] font-normal font-mono flex items-center gap-1">
+                <Link2 className="w-2.5 h-2.5" />
+                Accepts Ultimate-Guitar URLs, web paths or chord text
               </span>
             </label>
             <textarea

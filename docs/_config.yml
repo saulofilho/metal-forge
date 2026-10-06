@@ -1,0 +1,5 @@
+# Disable Jekyll processing and theme
+theme: []
+plugins: []
+include:
+  - .nojekyll

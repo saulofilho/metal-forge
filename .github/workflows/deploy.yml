@@ -34,8 +34,11 @@ jobs:
       - name: Build for GitHub Pages
         run: npm run build:gh-pages
 
-      - name: Add .nojekyll
-        run: touch ./dist/.nojekyll
+      - name: Ensure .nojekyll in all deployment targets
+        run: |
+          touch ./dist/.nojekyll
+          touch ./docs/.nojekyll
+          touch ./.nojekyll
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
